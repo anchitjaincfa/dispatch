@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DISPATCH — Wildfire Operations Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0a0f0d;
+    --surface:#0f1714;
+    --surface-2:#0c1310;
+    --border:#1d2f28;
+    --border-soft:#16241e;
+    --map:#0d1411;
+    --grid:#15241d;
+    --road:#26413a;
+    --fire-core:#ff6a18;
+    --fire-hot:#ffd24a;
+    --crew:#3b82f6;
+    --evac:#f59e0b;
+    --town:#eab308;
+    --shelter:#22c55e;
+    --text:#cfe3da;
+    --muted:#5e7a70;
+    --hint:#ffb86b;
+    --danger:#ff7a5c;
+    --online:#4ade80;
+    --mono:"Space Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Space Grotesk",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#0a0f0d;
+    color:#cfe3da;
+    font-family:'Space Grotesk', system-ui, sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{display:flex;flex-direction:column;height:100vh;width:100vw}
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    height:54px;flex:0 0 54px;
+    padding:0 18px;
+    background:linear-gradient(180deg,#0f1714,#0c1310);
+    border-bottom:1px solid #1d2f28;
+    z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-mark{
+    display:flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:6px;
+    background:radial-gradient(circle at 35% 30%,#ff8a3c,#ff6a18 55%,#b53d08);
+    box-shadow:0 0 14px rgba(255,106,24,.5),inset 0 0 6px rgba(255,210,74,.6);
+  }
+  .brand-mark svg{width:14px;height:14px}
+  .brand-name{font-weight:700;letter-spacing:3px;font-size:15px}
+  .brand-sub{font-family:'Space Mono', ui-monospace, monospace;font-size:10px;color:#5e7a70;letter-spacing:1px;margin-top:1px}
+  .topbar-right{display:flex;align-items:center;gap:14px}
+  .status-pill{
+    display:flex;align-items:center;gap:9px;
+    font-family:'Space Mono', ui-monospace, monospace;font-size:11px;letter-spacing:.5px;
+    padding:7px 13px;border-radius:999px;
+    background:#0c1310;border:1px solid #1d2f28;
+    color:#5e7a70;
+  }
+  .status-pill b{color:#cfe3da;font-weight:400}
+  .dot-online{
+    width:8px;height:8px;border-radius:50%;background:#4ade80;
+    box-shadow:0 0 0 0 rgba(74,222,128,.6);
+    animation:pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}
+    70%{box-shadow:0 0 0 7px rgba(74,222,128,0)}
+    100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}
+  }
+  .backend-sel{display:flex;align-items:center;gap:8px;font-family:'Space Mono', ui-monospace, monospace;font-size:10px;color:#5e7a70;letter-spacing:1px}
+  select.backend{
+    font-family:'Space Mono', ui-monospace, monospace;font-size:11px;
+    background:#0c1310;color:#cfe3da;
+    border:1px solid #1d2f28;border-radius:7px;
+    padding:6px 9px;cursor:pointer;outline:none;letter-spacing:.5px;
+  }
+  select.backend:hover{border-color:#2a463c}
+
+  /* ---------- BODY SPLIT ---------- */
+  .body{display:flex;flex:1;min-height:0}
+  .map-region{position:relative;flex:1 1 70%;min-width:0;background:#0d1411}
+  svg#map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+  .map-hint{
+    position:absolute;left:16px;bottom:16px;z-index:6;
+    display:flex;align-items:center;gap:9px;
+    font-family:'Space Mono', ui-monospace, monospace;font-size:11px;color:#ffb86b;
+    background:rgba(12,19,16,.82);border:1px solid #1d2f28;
+    padding:8px 13px;border-radius:8px;backdrop-filter:blur(3px);
+    pointer-events:none;letter-spacing:.4px;
+  }
+  .map-hint .grip{display:flex;gap:2px}
+  .map-hint .grip i{width:3px;height:3px;border-radius:50%;background:#ffb86b;display:block;opacity:.8}
+
+  .legend{
+    position:absolute;left:16px;top:14px;z-index:6;
+    display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;
+    background:rgba(12,19,16,.82);border:1px solid #1d2f28;
+    padding:9px 14px;border-radius:9px;backdrop-filter:blur(3px);
+    font-family:'Space Mono', ui-monospace, monospace;font-size:10px;color:#5e7a70;letter-spacing:.5px;
+    max-width:62%;
+  }
+  .leg{display:flex;align-items:center;gap:6px}
+  .leg .sw{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+  .leg .sw.sq{border-radius:2px}
+  .leg .sw.line{width:16px;height:0;border-radius:0;border-top:2px solid}
+  .leg .sw.dash{width:16px;height:0;border-radius:0;border-top:2px dashed}
+
+  .map-tools{
+    position:absolute;right:16px;bottom:16px;z-index:6;
+    display:flex;flex-direction:column;gap:7px;align-items:flex-end;
+  }
+  .toolbtn{
+    font-family:'Space Mono', ui-monospace, monospace;font-size:10.5px;letter-spacing:.5px;
+    background:rgba(15,23,20,.9);color:#cfe3da;
+    border:1px solid #1d2f28;border-radius:7px;
+    padding:8px 12px;cursor:pointer;text-align:left;min-width:168px;
+    transition:.13s;display:flex;align-items:center;gap:8px;
+    backdrop-filter:blur(3px);
+  }
+  .toolbtn:hover{border-color:#36564a;background:rgba(20,32,27,.95)}
+  .toolbtn .ic{color:#ffb86b;font-size:12px;width:14px;text-align:center}
+  .toolbtn.reset{color:#5e7a70}
+  .toolbtn.reset .ic{color:#5e7a70}
+
+  /* ---------- RIGHT RAIL ---------- */
+  .rail{
+    flex:0 0 360px;max-width:360px;
+    background:#0f1714;border-left:1px solid #1d2f28;
+    display:flex;flex-direction:column;min-height:0;overflow-y:auto;
+  }
+  .rail::-webkit-scrollbar{width:8px}
+  .rail::-webkit-scrollbar-thumb{background:#1b2b25;border-radius:8px}
+  .panel{padding:16px 16px 18px;border-bottom:1px solid #16241e}
+  .panel-title{
+    font-family:'Space Mono', ui-monospace, monospace;font-size:10px;letter-spacing:2.5px;
+    text-transform:uppercase;color:#5e7a70;margin-bottom:13px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .panel-title .tag{color:#3a5249;font-size:9px;letter-spacing:1.5px}
+
+  /* crisis box */
+  .crisis{
+    background:#0c1310;border:1px solid #16241e;
+    border-radius:9px;padding:11px 12px;
+  }
+  .crisis label{font-family:'Space Mono', ui-monospace, monospace;font-size:9px;letter-spacing:1.5px;color:#3a5249;text-transform:uppercase}
+  .crisis p{font-size:13px;line-height:1.5;color:#cfe3da;margin-top:6px;font-weight:400}
+  .chips-parsed{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+  .pchip{font-family:'Space Mono', ui-monospace, monospace;font-size:9.5px;letter-spacing:.5px;color:#ffb86b;
+    background:rgba(255,184,107,.08);border:1px solid rgba(255,184,107,.22);
+    padding:3px 7px;border-radius:5px}
+
+  /* metric chips */
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}
+  .metric{
+    background:#0c1310;border:1px solid #16241e;
+    border-radius:9px;padding:11px 10px;text-align:left;
+    transition:.15s;
+  }
+  .metric .mv{font-family:'Space Mono', ui-monospace, monospace;font-size:23px;font-weight:700;line-height:1;color:#cfe3da}
+  .metric .ml{font-family:'Space Mono', ui-monospace, monospace;font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:#5e7a70;margin-top:7px}
+  .metric.warn{border-color:rgba(255,122,92,.5);background:rgba(255,122,92,.07)}
+  .metric.warn .mv{color:#ff7a5c}
+  .metric.ok .mv{color:#22c55e}
+
+  /* narration log */
+  .log{display:flex;flex-direction:column;gap:8px}
+  .logline{
+    font-family:'Space Mono', ui-monospace, monospace;font-size:11.5px;line-height:1.5;
+    color:#cfe3da;
+    background:#0c1310;border:1px solid #16241e;
+    border-left:2px solid #3b82f6;
+    padding:9px 11px;border-radius:0 7px 7px 0;
+    animation:slidein .35s ease;
+  }
+  .logline .ts{color:#5e7a70;font-size:9.5px;letter-spacing:.5px;display:block;margin-bottom:3px}
+  .logline.alert{border-left-color:#ff7a5c}
+  .logline.alert .ts{color:#ff7a5c}
+  .logline.system{border-left-color:#2a463c;opacity:.85}
+  @keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+
+  /* evac rows */
+  .evac-list{display:flex;flex-direction:column;gap:7px}
+  .evac-row{
+    display:grid;grid-template-columns:1fr auto 1fr auto;align-items:center;gap:9px;
+    background:#0c1310;border:1px solid #16241e;
+    border-radius:8px;padding:9px 11px;font-family:'Space Mono', ui-monospace, monospace;font-size:12px;
+    transition:.15s;
+  }
+  .evac-row .from{display:flex;flex-direction:column;gap:2px}
+  .evac-row .nm{color:#cfe3da}
+  .evac-row .pop{font-size:9px;color:#5e7a70;letter-spacing:.5px}
+  .evac-row .arr{color:#f59e0b;font-size:13px}
+  .evac-row .to{display:flex;flex-direction:column;gap:2px;text-align:right}
+  .evac-row .to .nm{color:#bcd}
+  .evac-row .badge{
+    font-size:8.5px;letter-spacing:.5px;padding:2px 6px;border-radius:5px;
+    background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.28);
+    white-space:nowrap;
+  }
+  .evac-row.over{border-color:rgba(255,122,92,.55);background:rgba(255,122,92,.08)}
+  .evac-row.over .nm{color:#ffd0c4}
+  .evac-row.over .arr{color:#ff7a5c}
+  .evac-row.over .badge{background:rgba(255,122,92,.14);color:#ff7a5c;border-color:rgba(255,122,92,.4)}
+  .evac-row .warnglyph{color:#ff7a5c;font-weight:700}
+
+  .cap-summary{margin-top:11px;display:flex;flex-direction:column;gap:6px}
+  .cap-bar-row{display:flex;align-items:center;gap:9px;font-family:'Space Mono', ui-monospace, monospace;font-size:10px;color:#5e7a70}
+  .cap-bar-row .cn{flex:0 0 86px;color:#9fb8ae}
+  .cap-track{flex:1;height:6px;background:#0a100d;border-radius:4px;overflow:hidden;border:1px solid #16241e}
+  .cap-fill{height:100%;background:#22c55e;border-radius:4px;transition:width .25s,background .25s}
+  .cap-fill.over{background:#ff7a5c}
+  .cap-bar-row .cnum{flex:0 0 64px;text-align:right;color:#9fb8ae}
+
+  @media(max-width:920px){
+    .body{flex-direction:column;overflow-y:auto}
+    .map-region{flex:0 0 56vh;min-height:360px}
+    .rail{flex:1 1 auto;max-width:none;border-left:none;border-top:1px solid #1d2f28}
+    .app{height:auto;min-height:100vh}
+    body{overflow:auto}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2c1.5 3 4 4.5 4 8a4 4 0 1 1-8 0c0-1.5.6-2.6 1.4-3.6C9.8 7.2 11 5.5 12 2Z" fill="#3a1404"/><path d="M12 8c.8 1.4 2 2.2 2 4a2 2 0 1 1-4 0c0-1 .5-1.6 1-2.2.4-.5.8-1 1-1.8Z" fill="#ffd24a"/></svg>
+      </span>
+      <div>
+        <div class="brand-name">DISPATCH</div>
+        <div class="brand-sub">WILDFIRE OPS CONSOLE</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="backend-sel">
+        SOLVER
+        <select class="backend" id="backendSel">
+          <option value="mock">mock</option>
+          <option value="ortools">OR-Tools</option>
+          <option value="qaoa">QAOA</option>
+          <option value="xpyq">XPYQ</option>
+        </select>
+      </div>
+      <div class="status-pill">
+        <span class="dot-online"></span>
+        SOLVER ONLINE · backend:&nbsp;<b id="backendLabel">mock</b>
+      </div>
+    </div>
+  </header>
+
+  <!-- BODY -->
+  <div class="body">
+    <!-- MAP -->
+    <div class="map-region">
+      <svg id="map" viewBox="0 0 1000 680" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M40 0H0V40" fill="none" stroke="#15241d" stroke-width="1"/>
+          </pattern>
+          <radialGradient id="fireGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff1c0" stop-opacity="1"/>
+            <stop offset="18%" stop-color="#ffd24a" stop-opacity=".95"/>
+            <stop offset="48%" stop-color="#ff6a18" stop-opacity=".75"/>
+            <stop offset="78%" stop-color="#ff6a18" stop-opacity=".18"/>
+            <stop offset="100%" stop-color="#ff6a18" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="6" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <rect x="0" y="0" width="1000" height="680" fill="#0d1411"/>
+        <rect x="0" y="0" width="1000" height="680" fill="url(#grid)"/>
+
+        <g id="roads"></g>
+        <g id="routes"></g>
+        <g id="dpoints"></g>
+        <g id="nodes"></g>
+        <g id="fireLayer"></g>
+      </svg>
+
+      <div class="legend" id="legend">
+        <span class="leg"><span class="sw" style="background:#3b82f6"></span>Station / crew</span>
+        <span class="leg"><span class="sw sq" style="background:#22c55e"></span>Shelter</span>
+        <span class="leg"><span class="sw" style="background:#eab308"></span>Town</span>
+        <span class="leg"><span class="sw" style="background:#3a5249"></span>Defensible pt</span>
+        <span class="leg"><span class="sw line" style="border-color:#3b82f6"></span>Crew route</span>
+        <span class="leg"><span class="sw dash" style="border-color:#f59e0b"></span>Evac route</span>
+      </div>
+
+      <div class="map-hint">
+        <span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        drag the fire — routes re-solve live
+      </div>
+
+      <div class="map-tools">
+        <button class="toolbtn" id="advBtn"><span class="ic">▸▸</span>Advance fire toward towns</button>
+        <button class="toolbtn" id="roadBtn"><span class="ic">⊘</span>Close a road</button>
+        <button class="toolbtn" id="crewBtn"><span class="ic">✕</span>Lose nearest crew</button>
+        <button class="toolbtn reset" id="resetBtn"><span class="ic">⟲</span>Reset scenario</button>
+      </div>
+    </div>
+
+    <!-- RIGHT RAIL -->
+    <aside class="rail">
+      <!-- crisis -->
+      <div class="panel">
+        <div class="panel-title">Incident <span class="tag">PARSED BY THE AGENT</span></div>
+        <div class="crisis">
+          <label>operator brief</label>
+          <p>Wildfire spreading toward Pinecrest and Cedar Flat. 4 crews staged, 3 shelters online — route crews and evacuate the corridor.</p>
+          <div class="chips-parsed">
+            <span class="pchip">5 towns</span>
+            <span class="pchip">4 crews</span>
+            <span class="pchip">3 shelters</span>
+            <span class="pchip">1 active fire</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- dispatcher -->
+      <div class="panel">
+        <div class="panel-title">Dispatcher</div>
+        <div class="metrics">
+          <div class="metric" id="mRisk"><div class="mv">0</div><div class="ml">Towns at risk</div></div>
+          <div class="metric" id="mCrew"><div class="mv">0</div><div class="ml">Crews routed</div></div>
+          <div class="metric" id="mCap"><div class="mv">OK</div><div class="ml">Capacity</div></div>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+
+      <!-- evac -->
+      <div class="panel">
+        <div class="panel-title">Evacuation plan <span class="tag" id="evacFlag">FEASIBLE</span></div>
+        <div class="evac-list" id="evacList"></div>
+        <div class="cap-summary" id="capSummary"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   DISPATCH — mock optimizer + tactical map (vanilla JS)
+   ============================================================ */
+const SVGNS="http://www.w3.org/2000/svg";
+const $=(s,r=document)=>r.querySelector(s);
+const el=(n,a={})=>{const e=document.createElementNS(SVGNS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* ---------- scenario (mock, in-memory) ---------- */
+const BASE={
+  stations:[
+    {id:"C1",x:150,y:120}, {id:"C2",x:140,y:540},
+    {id:"C3",x:880,y:130}, {id:"C4",x:600,y:630},
+  ],
+  shelters:[
+    {id:"S1",name:"Civic Center",x:250,y:300,cap:2200},
+    {id:"S2",name:"North Depot", x:540,y:70, cap:1500},
+    {id:"S3",name:"Eastside HS", x:910,y:430,cap:1700},
+  ],
+  towns:[
+    {id:"T1",name:"Pinecrest", x:820,y:190,pop:1400},
+    {id:"T2",name:"Cedar Flat",x:660,y:320,pop:900},
+    {id:"T3",name:"Ridgeway",  x:500,y:170,pop:600},
+    {id:"T4",name:"Junction",  x:430,y:470,pop:1100},
+    {id:"T5",name:"Millhaven", x:770,y:530,pop:750},
+  ],
+  dpoints:[
+    {id:"D1",x:740,y:250},{id:"D2",x:600,y:390},{id:"D3",x:480,y:300},
+    {id:"D4",x:710,y:440},{id:"D5",x:560,y:230},{id:"D6",x:830,y:330},
+  ],
+  fire:{x:640,y:350,r:115},
+  roadNodes:{
+    a:{x:120,y:90}, b:{x:380,y:120}, c:{x:620,y:80}, d:{x:880,y:130},
+    e:{x:200,y:300},f:{x:470,y:300},g:{x:700,y:300},h:{x:920,y:320},
+    i:{x:150,y:540},j:{x:440,y:500},k:{x:710,y:520},l:{x:900,y:540},
+    m:{x:580,y:640},
+  },
+  roads:[
+    ["a","b"],["b","c"],["c","d"],["a","e"],["b","f"],["c","g"],["d","h"],
+    ["e","f"],["f","g"],["g","h"],["e","i"],["f","j"],["g","k"],["h","l"],
+    ["i","j"],["j","k"],["k","l"],["j","m"],["k","m"],["e","b"],["g","c"],["f","b"],
+  ],
+};
+
+let S;                 // live state (deep clone of BASE)
+let closedRoads=[];    // indices of closed roads
+let lostCrews=[];      // ids of lost crews
+function clone(o){return JSON.parse(JSON.stringify(o));}
+function resetState(){
+  S=clone(BASE);
+  closedRoads=[];lostCrews=[];
+}
+
+/* ---------- geometry ---------- */
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function pathAround(a,b,fire,margin=34){
+  // quadratic that bends around the fire if the straight segment passes through it
+  const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+  const dm=dist(mid,fire);
+  const R=fire.r+margin;
+  if(dm>R){ return `M${a.x} ${a.y} L${b.x} ${b.y}`; }
+  // direction to push the midpoint clear of the fire
+  let dx=mid.x-fire.x, dy=mid.y-fire.y;
+  if(dm<1){ // segment centered on fire -> push perpendicular to AB
+    dx=-(b.y-a.y); dy=(b.x-a.x);
+    const l=Math.hypot(dx,dy)||1; dx/=l; dy/=l;
+  }else{ dx/=dm; dy/=dm; }
+  const target={x:fire.x+dx*R, y:fire.y+dy*R};        // point the curve should pass through
+  const ctrl={x:2*target.x-mid.x, y:2*target.y-mid.y}; // quad control so curve hits target at t=.5
+  return `M${a.x} ${a.y} Q${ctrl.x} ${ctrl.y} ${b.x} ${b.y}`;
+}
+
+/* ---------- the solver (mock) ---------- */
+function solve(){
+  const fire=S.fire;
+  const riskMargin=70;
+  // towns at risk = within fire radius + margin
+  S.towns.forEach(t=>{ t.risk=dist(t,fire)<fire.r+riskMargin; });
+  const townsAtRisk=S.towns.filter(t=>t.risk);
+
+  // threatened defensible points (near the fire) — crew targets
+  S.dpoints.forEach(d=>{ d.threat=dist(d,fire)<fire.r+90; });
+  let threatened=S.dpoints.filter(d=>d.threat);
+  if(threatened.length===0) threatened=[...S.dpoints]; // standby on nearest
+
+  // CREW ROUTING: each crew -> nearest threatened defensible point
+  const crews=S.stations.filter(s=>!lostCrews.includes(s.id));
+  const crewRoutes=crews.map(c=>{
+    let best=threatened[0], bd=Infinity;
+    threatened.forEach(d=>{const dd=dist(c,d); if(dd<bd){bd=dd;best=d;}});
+    return {crew:c, target:best, active:best.threat===true};
+  });
+  const crewsRouted=crewRoutes.filter(r=>r.active).length;
+
+  // EVAC: towns nearest the fire first
+  const order=[...S.towns].sort((a,b)=>dist(a,fire)-dist(b,fire));
+  S.shelters.forEach(s=>{s.used=0;});
+  const evac=[];
+  for(const t of order){
+    const byDist=[...S.shelters].sort((a,b)=>dist(t,a)-dist(t,b));
+    let chosen=byDist.find(s=>s.used+t.pop<=s.cap) || byDist[0];
+    const over = chosen.used+t.pop>chosen.cap;
+    chosen.used+=t.pop;
+    evac.push({town:t, shelter:chosen, over});
+  }
+  // keep evac in stable town order for display
+  evac.sort((a,b)=>S.towns.indexOf(a.town)-S.towns.indexOf(b.town));
+  const anyOver=evac.some(e=>e.over) || S.shelters.some(s=>s.used>s.cap);
+
+  return {townsAtRisk, crewRoutes, crewsRouted, evac, anyOver, threatened};
+}
+
+/* ---------- rendering ---------- */
+function renderStatic(){
+  // roads
+  const rg=$("#roads"); rg.innerHTML="";
+  S.roads.forEach((r,idx)=>{
+    const a=S.roadNodes[r[0]], b=S.roadNodes[r[1]];
+    const closed=closedRoads.includes(idx);
+    const ln=el("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,
+      stroke:closed?"#3a1c16":"#26413a",
+      "stroke-width":closed?2.5:3,
+      "stroke-linecap":"round",
+      "stroke-dasharray":closed?"3 7":"none",
+      opacity:closed?.9:.85});
+    rg.appendChild(ln);
+  });
+  // defensible points
+  const dg=$("#dpoints"); dg.innerHTML="";
+  S.dpoints.forEach(d=>{
+    dg.appendChild(el("circle",{cx:d.x,cy:d.y,r:4,fill:"#2c453c",stroke:"#3a5249","stroke-width":1,"data-dp":d.id}));
+  });
+  // nodes (stations/shelters/towns)
+  const ng=$("#nodes"); ng.innerHTML="";
+  // shelters (green squares)
+  S.shelters.forEach(s=>{
+    const g=el("g",{});
+    g.appendChild(el("rect",{x:s.x-9,y:s.y-9,width:18,height:18,rx:3,
+      fill:"rgba(34,197,94,.16)",stroke:"#22c55e","stroke-width":1.6}));
+    g.appendChild(el("rect",{x:s.x-3.5,y:s.y-3.5,width:7,height:7,rx:1.5,fill:"#22c55e"}));
+    const lbl=el("text",{x:s.x,y:s.y+24,"text-anchor":"middle",
+      fill:"#7fd6a0","font-family":"'Space Mono', ui-monospace, monospace","font-size":"10",class:"maplbl"});
+    lbl.textContent=`${s.name} · cap ${s.cap}`;
+    g.appendChild(lbl);
+    ng.appendChild(g);
+  });
+  // stations (blue dots)
+  S.stations.forEach(s=>{
+    if(lostCrews.includes(s.id)) return;
+    const g=el("g",{});
+    g.appendChild(el("circle",{cx:s.x,cy:s.y,r:8,fill:"rgba(59,130,246,.18)",stroke:"#3b82f6","stroke-width":1.6}));
+    g.appendChild(el("circle",{cx:s.x,cy:s.y,r:3.4,fill:"#3b82f6"}));
+    const lbl=el("text",{x:s.x,y:s.y-13,"text-anchor":"middle",
+      fill:"#86b4f7","font-family":"'Space Mono', ui-monospace, monospace","font-size":"10.5","font-weight":"700"});
+    lbl.textContent=s.id;
+    g.appendChild(lbl);
+    ng.appendChild(g);
+  });
+  // towns (yellow dots) — risk styling applied in renderDynamic via class
+  S.towns.forEach(t=>{
+    const g=el("g",{"data-town":t.id});
+    g.appendChild(el("circle",{cx:t.x,cy:t.y,r:13,fill:"none",stroke:"#eab308","stroke-width":1,opacity:.25,class:"riskring"}));
+    g.appendChild(el("circle",{cx:t.x,cy:t.y,r:6.5,fill:"#eab308",stroke:"#0a0f0d","stroke-width":1.5,class:"towndot"}));
+    const lbl=el("text",{x:t.x,y:t.y+22,"text-anchor":"middle",
+      fill:"#d9c46a","font-family":"'Space Mono', ui-monospace, monospace","font-size":"10",class:"townlbl"});
+    lbl.textContent=`${t.name} · ${t.pop}`;
+    g.appendChild(lbl);
+    ng.appendChild(g);
+  });
+}
+
+function renderFire(){
+  const fg=$("#fireLayer"); fg.innerHTML="";
+  const f=S.fire;
+  // glow
+  fg.appendChild(el("circle",{cx:f.x,cy:f.y,r:f.r,fill:"url(#fireGrad)",filter:"url(#softglow)","pointer-events":"none"}));
+  // flicker core
+  const core=el("circle",{cx:f.x,cy:f.y,r:f.r*.42,fill:"url(#fireGrad)","pointer-events":"none",opacity:".9"});
+  core.style.mixBlendMode="screen";
+  fg.appendChild(core);
+  // draggable handle
+  const handle=el("g",{id:"fireHandle",style:"cursor:grab"});
+  handle.appendChild(el("circle",{cx:f.x,cy:f.y,r:18,fill:"rgba(255,106,24,.001)"})); // hit area
+  handle.appendChild(el("circle",{cx:f.x,cy:f.y,r:9,fill:"#fff1c0",stroke:"#ff6a18","stroke-width":2}));
+  handle.appendChild(el("circle",{cx:f.x,cy:f.y,r:3.2,fill:"#ff6a18"}));
+  fg.appendChild(handle);
+}
+
+function renderRoutes(sol){
+  const rg=$("#routes"); rg.innerHTML="";
+  // crew routes (solid blue)
+  sol.crewRoutes.forEach(r=>{
+    const p=el("path",{d:pathAround(r.crew,r.target,S.fire),
+      fill:"none",stroke:"#3b82f6",
+      "stroke-width":r.active?2.6:1.6,
+      "stroke-linecap":"round",
+      opacity:r.active?.95:.4,
+      "stroke-dasharray":r.active?"none":"1 6"});
+    rg.appendChild(p);
+    // arrow head dot at target
+    rg.appendChild(el("circle",{cx:r.target.x,cy:r.target.y,r:r.active?5:3.5,
+      fill:r.active?"#3b82f6":"#2c453c",
+      stroke:r.active?"#bcd7fb":"none","stroke-width":1}));
+  });
+  // evac routes (dashed amber)
+  sol.evac.forEach(e=>{
+    const p=el("path",{d:pathAround(e.town,e.shelter,S.fire,30),
+      fill:"none",stroke:e.over?"#ff7a5c":"#f59e0b",
+      "stroke-width":2.2,"stroke-linecap":"round",
+      "stroke-dasharray":"7 6",opacity:.92,class:"evacpath"});
+    rg.appendChild(p);
+  });
+}
+
+function updateTownStyles(sol){
+  S.towns.forEach(t=>{
+    const g=$(`[data-town="${t.id}"]`);
+    if(!g)return;
+    const ring=g.querySelector(".riskring");
+    const dot=g.querySelector(".towndot");
+    if(t.risk){
+      ring.setAttribute("opacity",".85");
+      ring.setAttribute("stroke","#ff7a5c");
+      ring.setAttribute("r","16");
+      dot.setAttribute("fill","#ff7a5c");
+    }else{
+      ring.setAttribute("opacity",".22");
+      ring.setAttribute("stroke","#eab308");
+      ring.setAttribute("r","13");
+      dot.setAttribute("fill","#eab308");
+    }
+  });
+  // threat dpoints
+  S.dpoints.forEach(d=>{
+    const c=$(`[data-dp="${d.id}"]`);
+    if(!c)return;
+    if(d.threat){c.setAttribute("fill","#5a3a1c");c.setAttribute("stroke","#f59e0b");c.setAttribute("r","5");}
+    else{c.setAttribute("fill","#2c453c");c.setAttribute("stroke","#3a5249");c.setAttribute("r","4");}
+  });
+}
+
+/* ---------- right-rail panels ---------- */
+function renderPanels(sol){
+  // metrics
+  const risk=sol.townsAtRisk.length;
+  $("#mRisk .mv").textContent=risk;
+  $("#mRisk").className="metric"+(risk>0?" warn":"");
+  $("#mCrew .mv").textContent=sol.crewsRouted;
+  $("#mCrew").className="metric";
+  const capEl=$("#mCap");
+  if(sol.anyOver){capEl.className="metric warn";$("#mCap .mv").textContent="!!";}
+  else{capEl.className="metric ok";$("#mCap .mv").textContent="OK";}
+
+  // evac rows
+  const list=$("#evacList"); list.innerHTML="";
+  sol.evac.forEach(e=>{
+    const row=document.createElement("div");
+    row.className="evac-row"+(e.over?" over":"");
+    row.innerHTML=`
+      <div class="from">
+        <span class="nm">${e.over?'<span class="warnglyph">⚠ </span>':''}${e.town.name}</span>
+        <span class="pop">pop ${e.town.pop}</span>
+      </div>
+      <span class="arr">→</span>
+      <div class="to">
+        <span class="nm">${e.shelter.name}</span>
+        <span class="pop">${e.shelter.id}</span>
+      </div>
+      <span class="badge">${e.over?'OVER CAP':'ROUTED'}</span>`;
+    list.appendChild(row);
+  });
+
+  // capacity bars
+  const cap=$("#capSummary"); cap.innerHTML="";
+  S.shelters.forEach(s=>{
+    const pct=Math.min(100,Math.round(s.used/s.cap*100));
+    const over=s.used>s.cap;
+    const r=document.createElement("div");
+    r.className="cap-bar-row";
+    r.innerHTML=`<span class="cn">${s.name}</span>
+      <span class="cap-track"><span class="cap-fill ${over?'over':''}" style="width:${Math.min(100,s.used/s.cap*100)}%"></span></span>
+      <span class="cnum" style="${over?'color:#ff7a5c':''}">${s.used}/${s.cap}</span>`;
+    cap.appendChild(r);
+  });
+
+  // evac flag
+  const flag=$("#evacFlag");
+  if(sol.anyOver){flag.textContent="OVER CAPACITY";flag.style.color="#ff7a5c";}
+  else{flag.textContent="FEASIBLE";flag.style.color="#3a5249";}
+}
+
+/* ---------- narration log ---------- */
+let logLines=[];
+function nowstamp(){
+  const d=new Date();
+  return d.toTimeString().slice(0,8);
+}
+function pushLog(text,kind=""){
+  logLines.unshift({text,kind,ts:nowstamp()});
+  logLines=logLines.slice(0,4);
+  const log=$("#log"); log.innerHTML="";
+  logLines.forEach(l=>{
+    const div=document.createElement("div");
+    div.className="logline"+(l.kind?` ${l.kind}`:"");
+    div.innerHTML=`<span class="ts">${l.ts} · DISPATCH</span>${l.text}`;
+    log.appendChild(div);
+  });
+}
+function narrate(sol){
+  const near=[...S.towns].sort((a,b)=>dist(a,S.fire)-dist(b,S.fire)).slice(0,2).map(t=>t.name);
+  if(sol.anyOver){
+    const ov=sol.evac.filter(e=>e.over).map(e=>e.town.name);
+    pushLog(`Fire near ${near.join(", ")} — shelter overflow on ${ov.join(", ")}. Holding ${sol.crewsRouted} crew(s) on the line, seeking open capacity.`,"alert");
+  }else if(sol.townsAtRisk.length){
+    pushLog(`Fire advancing on ${near.join(", ")} — reassigning ${sol.crewsRouted} crew(s) to defensible points, rerouting evac to nearest open shelters.`);
+  }else{
+    pushLog(`Fire repositioned clear of populated corridor. ${sol.crewsRouted} crew(s) on standby; evac routes nominal.`);
+  }
+}
+
+/* ---------- main update ---------- */
+let lastSol=null;
+function update(opts={}){
+  const sol=solve();
+  lastSol=sol;
+  renderRoutes(sol);
+  updateTownStyles(sol);
+  renderPanels(sol);
+  if(opts.narrate) narrate(sol);
+}
+function fullRender(){
+  renderStatic();
+  renderFire();
+  update();
+}
+
+/* ---------- fire drag + click-to-place ---------- */
+const svg=$("#map");
+function svgPoint(evt){
+  const pt=svg.createSVGPoint();
+  const t=evt.touches?evt.touches[0]:evt;
+  pt.x=t.clientX; pt.y=t.clientY;
+  const ctm=svg.getScreenCTM().inverse();
+  return pt.matrixTransform(ctm);
+}
+let dragging=false, rafQueued=false, pendingPt=null;
+function moveFireTo(p){
+  S.fire.x=Math.max(20,Math.min(980,p.x));
+  S.fire.y=Math.max(20,Math.min(660,p.y));
+}
+function onDrag(evt){
+  if(!dragging)return;
+  evt.preventDefault();
+  pendingPt=svgPoint(evt);
+  if(!rafQueued){
+    rafQueued=true;
+    requestAnimationFrame(()=>{
+      rafQueued=false;
+      moveFireTo(pendingPt);
+      renderFire();
+      bindHandle();
+      update();
+    });
+  }
+}
+function endDrag(){
+  if(!dragging)return;
+  dragging=false;
+  document.body.style.userSelect="";
+  const h=$("#fireHandle"); if(h)h.style.cursor="grab";
+  update({narrate:true});
+}
+function startDrag(evt){
+  dragging=true;
+  document.body.style.userSelect="none";
+  const h=$("#fireHandle"); if(h)h.style.cursor="grabbing";
+  evt.preventDefault();
+}
+function bindHandle(){
+  const h=$("#fireHandle");
+  if(!h)return;
+  h.addEventListener("mousedown",startDrag);
+  h.addEventListener("touchstart",startDrag,{passive:false});
+}
+// click anywhere on map to move the fire
+svg.addEventListener("mousedown",(e)=>{
+  if(dragging)return;
+  if(e.target.closest("#fireHandle"))return;
+  moveFireTo(svgPoint(e));
+  renderFire(); bindHandle(); update({narrate:true});
+});
+svg.addEventListener("touchstart",(e)=>{
+  if(dragging)return;
+  if(e.target.closest("#fireHandle"))return;
+  moveFireTo(svgPoint(e));
+  renderFire(); bindHandle(); update({narrate:true});
+},{passive:true});
+window.addEventListener("mousemove",onDrag);
+window.addEventListener("touchmove",onDrag,{passive:false});
+window.addEventListener("mouseup",endDrag);
+window.addEventListener("touchend",endDrag);
+
+/* ---------- control buttons ---------- */
+$("#advBtn").addEventListener("click",()=>{
+  // step fire toward centroid of at-risk (or all) towns + grow
+  const targets=S.towns.filter(t=>t.risk);
+  const set=targets.length?targets:S.towns;
+  const cx=set.reduce((a,t)=>a+t.x,0)/set.length;
+  const cy=set.reduce((a,t)=>a+t.y,0)/set.length;
+  let dx=cx-S.fire.x, dy=cy-S.fire.y; const l=Math.hypot(dx,dy)||1;
+  S.fire.x+=dx/l*55; S.fire.y+=dy/l*55;
+  S.fire.r=Math.min(190,S.fire.r+14);
+  moveFireTo({x:S.fire.x,y:S.fire.y});
+  renderFire();bindHandle();update({narrate:true});
+});
+$("#roadBtn").addEventListener("click",()=>{
+  const open=S.roads.map((_,i)=>i).filter(i=>!closedRoads.includes(i));
+  if(!open.length)return;
+  // close a road near the fire for believability
+  open.sort((a,b)=>{
+    const ma={x:(S.roadNodes[S.roads[a][0]].x+S.roadNodes[S.roads[a][1]].x)/2,y:(S.roadNodes[S.roads[a][0]].y+S.roadNodes[S.roads[a][1]].y)/2};
+    const mb={x:(S.roadNodes[S.roads[b][0]].x+S.roadNodes[S.roads[b][1]].x)/2,y:(S.roadNodes[S.roads[b][0]].y+S.roadNodes[S.roads[b][1]].y)/2};
+    return dist(ma,S.fire)-dist(mb,S.fire);
+  });
+  closedRoads.push(open[0]);
+  renderStatic();update();
+  pushLog(`Road segment closed by fire activity — corridor flagged impassable, evac routing updated.`,"alert");
+});
+$("#crewBtn").addEventListener("click",()=>{
+  const live=S.stations.filter(s=>!lostCrews.includes(s.id));
+  if(live.length<=1){pushLog("Cannot release last crew — minimum one unit required on the line.","system");return;}
+  // lose crew nearest the fire
+  live.sort((a,b)=>dist(a,S.fire)-dist(b,S.fire));
+  lostCrews.push(live[0].id);
+  renderStatic();update({});
+  pushLog(`Crew ${live[0].id} lost contact near the fire front — redistributing remaining units.`,"alert");
+});
+$("#resetBtn").addEventListener("click",()=>{
+  resetState();
+  logLines=[];
+  fullRender();
+  pushLog("Scenario reset · 5 towns, 4 crews, 3 shelters staged. Solver online (mock).","system");
+});
+
+/* ---------- backend selector (only mock wired) ---------- */
+$("#backendSel").addEventListener("change",(e)=>{
+  const v=e.target.value;
+  $("#backendLabel").textContent=v==="mock"?"mock":v;
+  if(v==="mock") pushLog("Backend set to mock — in-memory heuristic solver active.","system");
+  else pushLog(`Backend set to ${e.target.options[e.target.selectedIndex].text} (not wired in demo) — falling back to mock solver.`,"system");
+});
+
+/* ---------- boot ---------- */
+resetState();
+fullRender();
+pushLog("Scenario loaded · 5 towns, 4 crews, 3 shelters staged. Drag the fire to re-solve.","system");
+</script>
+</body>
+</html>

@@ -39,6 +39,7 @@ _load_dotenv()
 
 import pydeck as pdk
 import streamlit as st
+import streamlit.components.v1 as components
 
 from agent import narrate, parse
 from core import geo, hazard
@@ -110,16 +111,50 @@ def reset():
     st.session_state.log = []
 
 
+HERO_PATH = os.path.join(HERE, "hero", "dispatch_drag.html")
+
+
+@st.cache_data
+def hero_html():
+    with open(HERO_PATH) as f:
+        return f.read()
+
+
+def fire_candidates(scenario, nx=7, ny=5):
+    """A grid of clickable hotspots over the scene's bounding box. Clicking one
+    moves the fire there and re-solves on the SELECTED real backend (pydeck
+    selection returns picked objects, not raw click coords — hence a grid)."""
+    pts = ([t["coord"] for t in scenario["towns"]]
+           + [s["coord"] for s in scenario["shelters"]]
+           + [s["coord"] for s in scenario["stations"]]
+           + [scenario["fire"]["center"]])
+    lngs, lats = [p[0] for p in pts], [p[1] for p in pts]
+    lo_x, hi_x, lo_y, hi_y = min(lngs), max(lngs), min(lats), max(lats)
+    mx = (hi_x - lo_x) * 0.06 or 0.01
+    my = (hi_y - lo_y) * 0.06 or 0.01
+    lo_x, hi_x, lo_y, hi_y = lo_x - mx, hi_x + mx, lo_y - my, hi_y + my
+    out = []
+    for j in range(ny):
+        for i in range(nx):
+            x = lo_x + (hi_x - lo_x) * i / (nx - 1)
+            y = lo_y + (hi_y - lo_y) * j / (ny - 1)
+            out.append({"position": [round(x, 5), round(y, 5)], "name": "⊹ move fire here"})
+    return out
+
+
 roadnet = get_roadnet()
 init_state()
 sc = st.session_state.scenario
 
 # ----------------------------- header ---------------------------------------
-hc1, hc2, hc3 = st.columns([2.4, 1.4, 1.2])
+hc1, hcv, hc2, hc3 = st.columns([1.9, 1.5, 1.4, 1.0])
 with hc1:
     st.markdown('<div class="d-title">▣ DISPATCH</div>', unsafe_allow_html=True)
     st.markdown('<div class="d-sub">WILDFIRE OPS CONSOLE · THE MAP THAT SAVES LIVES</div>',
                 unsafe_allow_html=True)
+with hcv:
+    view_mode = st.radio("view", ["🗺 Real solver", "🔥 Live drag"],
+                         horizontal=True, label_visibility="collapsed")
 with hc2:
     backend_label = st.selectbox(
         "Solver backend",
@@ -129,6 +164,15 @@ with hc2:
 with hc3:
     use_claude = st.toggle("Claude narration",
                            value=bool(os.environ.get("ANTHROPIC_API_KEY")))
+
+# ----- 2A: Live-drag hero view — true draggable fire (prototype, mock data) ---
+if "Live drag" in view_mode:
+    st.markdown(
+        '<span class="pill">🔥 LIVE DRAG · drag the fire — routes re-solve under your '
+        'finger. Interaction model on mock data; the real four-backend solver runs in '
+        'the 🗺 Real solver view.</span>', unsafe_allow_html=True)
+    components.html(hero_html(), height=760, scrolling=False)
+    st.stop()
 
 
 def make_solver(label):
@@ -246,6 +290,13 @@ layers = [
               data=[{"position": t["coord"], "name": f"{t['name']} (pop {t['population']})", "c": town_color(t)}
                     for t in sc["towns"]],
               get_position="position", get_radius=150, get_fill_color="c", pickable=True),
+    # 2B: clickable fire-placement hotspots (subtle); selection re-solves the real backend
+    pdk.Layer("ScatterplotLayer", id="firegrid",
+              data=fire_candidates(sc),
+              get_position="position", get_radius=420,
+              get_fill_color=[255, 210, 74, 35], get_line_color=[255, 210, 74, 110],
+              stroked=True, line_width_min_pixels=1, pickable=True,
+              auto_highlight=True, highlight_color=[255, 106, 24, 170]),
 ]
 
 view = pdk.ViewState(longitude=sc["center"][0], latitude=sc["center"][1],
@@ -261,9 +312,21 @@ with map_col:
         f'<span class="pill"><span class="dot"></span>SOLVER ONLINE · backend: '
         f'<b>{backend_short}</b> · {res.wall_ms:.0f} ms · {res.extra.get("qubits","–")} qubits</span> '
         f'&nbsp;<span class="pill">{sc["region"]}</span>', unsafe_allow_html=True)
-    st.pydeck_chart(deck, use_container_width=True)
-    st.caption("🔵 crew routes · 🟠 evacuation routes · 🔴 fire · 🟢 shelters · "
-               "🟡 towns (red = threatened) · ◇ defensible points · all on real OSM roads")
+    sel = st.pydeck_chart(deck, use_container_width=True, on_select="rerun",
+                          selection_mode="single-object", key="dispatch_map")
+    try:
+        picked = (sel.selection or {}).get("objects", {}).get("firegrid", [])
+    except Exception:
+        picked = []
+    if picked:
+        pos = picked[0].get("position")
+        cur = sc["fire"]["center"]
+        if pos and (abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6):
+            sc["fire"]["center"] = [pos[0], pos[1]]
+            st.session_state.event = "advance_fire"
+            st.rerun()
+    st.caption("🟡 click a hotspot to move the fire — re-solves on the selected backend · "
+               "🔵 crew routes · 🟠 evac routes · 🔴 fire · 🟢 shelters · ◇ defensible · real OSM roads")
 
 with panel:
     end = res.extra.get("endangered", [])
