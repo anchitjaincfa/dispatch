@@ -1,0 +1,31 @@
+{
+  "region": "Mock Ridge County (fictional, for Phase F)",
+  "center": [-122.05, 38.30],
+  "zoom": 11,
+  "fire": { "center": [-122.05, 38.30], "radius": 0.025 },
+  "dead_crews": [],
+  "closed_roads": [],
+  "stations": [
+    { "id": "crew1", "name": "Station 1 - Ridgeline", "coord": [-122.10, 38.34] },
+    { "id": "crew2", "name": "Station 2 - Valley", "coord": [-122.00, 38.26] },
+    { "id": "crew3", "name": "Station 3 - North Gate", "coord": [-122.06, 38.37] },
+    { "id": "crew4", "name": "Station 4 - East Mill", "coord": [-121.98, 38.32] }
+  ],
+  "defensible": [
+    { "id": "dp1", "coord": [-122.07, 38.32], "risk": 0.9 },
+    { "id": "dp2", "coord": [-122.03, 38.33], "risk": 0.8 },
+    { "id": "dp3", "coord": [-122.04, 38.28], "risk": 0.7 },
+    { "id": "dp4", "coord": [-122.08, 38.29], "risk": 0.6 }
+  ],
+  "towns": [
+    { "id": "t1", "name": "Pinecrest", "coord": [-122.08, 38.33], "population": 1200 },
+    { "id": "t2", "name": "Cedar Flat", "coord": [-122.02, 38.32], "population": 800 },
+    { "id": "t3", "name": "Millbrook", "coord": [-122.00, 38.29], "population": 1500 },
+    { "id": "t4", "name": "Hollow Creek", "coord": [-122.07, 38.27], "population": 600 }
+  ],
+  "shelters": [
+    { "id": "s1", "name": "Shelter A - High School", "coord": [-122.12, 38.30], "capacity": 1500 },
+    { "id": "s2", "name": "Shelter B - Civic Center", "coord": [-121.95, 38.30], "capacity": 1800 },
+    { "id": "s3", "name": "Shelter C - Fairgrounds", "coord": [-122.05, 38.40], "capacity": 1200 }
+  ]
+}

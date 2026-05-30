@@ -1,0 +1,18 @@
+# DISPATCH — pinned at hackathon. Core deps are REQUIRED; optional deps degrade gracefully.
+
+# --- core (required; app runs on these alone) ---
+streamlit>=1.33
+pydeck>=0.9
+networkx>=3.0
+numpy>=1.24
+pandas>=2.0
+requests>=2.28
+python-dotenv>=1.0
+pytest>=7.0
+
+# --- optional (each has a pure-Python fallback; install best-effort) ---
+ortools>=9.8        # classical VRP/assignment; falls back to greedy solver
+anthropic>=0.25     # agent NL parse + narration; falls back to deterministic
+qiskit>=1.0         # quantum QAOA; falls back to numpy simulated-annealer
+qiskit-aer>=0.14
+qiskit-optimization>=0.6
