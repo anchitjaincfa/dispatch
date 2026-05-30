@@ -14,6 +14,29 @@ from __future__ import annotations
 import json
 import os
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_dotenv():
+    """Minimal, dependency-free .env loader (KEY=VALUE per line). Does not override
+    variables already set in the real environment. Enables ANTHROPIC_API_KEY /
+    XPYQ_API_KEY without exporting them or adding python-dotenv."""
+    path = os.path.join(HERE, ".env")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key, val = key.strip(), val.strip().strip('"').strip("'")
+            if key and val and key not in os.environ:
+                os.environ[key] = val
+
+
+_load_dotenv()
+
 import pydeck as pdk
 import streamlit as st
 
@@ -21,7 +44,7 @@ from agent import narrate, parse
 from core import geo, hazard
 from solver import (ClassicalSolver, QuantumSolver, XpyQSolver, QUBOProblem)
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+SCENARIO_PATH = os.path.join(HERE, "data", "scenario_berkeley.json")
 SCENARIO_PATH = os.path.join(HERE, "data", "scenario_berkeley.json")
 
 st.set_page_config(page_title="DISPATCH", layout="wide", page_icon="🔥")
