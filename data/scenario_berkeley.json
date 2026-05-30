@@ -1,0 +1,35 @@
+{
+  "region": "Oakland–Berkeley Hills, CA (1991 Tunnel Fire footprint)",
+  "center": [-122.218, 37.858],
+  "zoom": 12.4,
+  "threat_radius_deg": 0.022,
+  "fire": { "center": [-122.213, 37.847], "radius": 0.010 },
+  "dead_crews": [],
+  "closed_roads": [],
+  "stations": [
+    { "id": "crew1", "name": "OFD Sta. 6 — Lakeview",        "coord": [-122.234, 37.846] },
+    { "id": "crew2", "name": "BFD Sta. 7 — Berkeley Hills",   "coord": [-122.252, 37.889] },
+    { "id": "crew3", "name": "OFD Sta. 24 — Montclair",       "coord": [-122.207, 37.833] },
+    { "id": "crew4", "name": "Moraga-Orinda FD",              "coord": [-122.169, 37.861] },
+    { "id": "crew5", "name": "OFD Sta. 25 — Rockridge",       "coord": [-122.252, 37.845] }
+  ],
+  "defensible": [
+    { "id": "dp1", "coord": [-122.222, 37.853], "risk": 0.95 },
+    { "id": "dp2", "coord": [-122.215, 37.846], "risk": 0.90 },
+    { "id": "dp3", "coord": [-122.230, 37.860], "risk": 0.82 },
+    { "id": "dp4", "coord": [-122.235, 37.850], "risk": 0.85 },
+    { "id": "dp5", "coord": [-122.212, 37.840], "risk": 0.75 }
+  ],
+  "towns": [
+    { "id": "t1", "name": "Forest Park / Hiller",        "coord": [-122.225, 37.857], "population": 1800 },
+    { "id": "t2", "name": "Montclair Village",           "coord": [-122.210, 37.835], "population": 2400 },
+    { "id": "t3", "name": "Claremont / Elmwood",         "coord": [-122.245, 37.858], "population": 2100 },
+    { "id": "t4", "name": "Berkeley Hills (Tilden edge)","coord": [-122.245, 37.892], "population": 1500 },
+    { "id": "t5", "name": "Piedmont Pines",              "coord": [-122.205, 37.823], "population": 1200 }
+  ],
+  "shelters": [
+    { "id": "s1", "name": "Berkeley HS / MLK",      "coord": [-122.272, 37.868], "capacity": 3600 },
+    { "id": "s2", "name": "Oakland Tech HS",        "coord": [-122.260, 37.830], "capacity": 3400 },
+    { "id": "s3", "name": "Orinda Community Center","coord": [-122.180, 37.880], "capacity": 2800 }
+  ]
+}
