@@ -120,6 +120,17 @@ def hero_html():
         return f.read()
 
 
+# Custom bidirectional component: real Carto basemap + a DRAGGABLE fire marker.
+# On drag-release the marker streams its lng/lat back to Python, which re-solves on
+# the selected real backend and passes the updated routes back to be drawn.
+_DRAGMAP_DIR = os.path.join(HERE, "components", "dispatch_map")
+_dispatch_map_component = components.declare_component("dispatch_map", path=_DRAGMAP_DIR)
+
+
+def dispatch_map(data, key=None):
+    return _dispatch_map_component(data=data, key=key, default=None)
+
+
 def fire_candidates(scenario, nx=7, ny=5):
     """A grid of clickable hotspots over the scene's bounding box. Clicking one
     moves the fire there and re-solves on the SELECTED real backend (pydeck
@@ -312,21 +323,28 @@ with map_col:
         f'<span class="pill"><span class="dot"></span>SOLVER ONLINE · backend: '
         f'<b>{backend_short}</b> · {res.wall_ms:.0f} ms · {res.extra.get("qubits","–")} qubits</span> '
         f'&nbsp;<span class="pill">{sc["region"]}</span>', unsafe_allow_html=True)
-    sel = st.pydeck_chart(deck, use_container_width=True, on_select="rerun",
-                          selection_mode="single-object", key="dispatch_map")
-    try:
-        picked = (sel.selection or {}).get("objects", {}).get("firegrid", [])
-    except Exception:
-        picked = []
-    if picked:
-        pos = picked[0].get("position")
+    map_data = {
+        "center": sc["center"], "zoom": sc.get("zoom", 12.2),
+        "fire": {"center": sc["fire"]["center"], "radius": sc["fire"]["radius"]},
+        "towns": [{"id": t["id"], "name": t["name"], "coord": t["coord"]} for t in sc["towns"]],
+        "shelters": [{"id": s["id"], "name": s["name"], "coord": s["coord"]} for s in sc["shelters"]],
+        "stations": [{"id": s["id"], "name": s["name"], "coord": s["coord"]} for s in sc["stations"]],
+        "defensible": [{"id": d["id"], "coord": d["coord"]} for d in sc["defensible"]],
+        "crew_routes": res.crew_routes,
+        "evac_routes": res.evac_routes,
+        "endangered": [t["id"] for t in res.extra.get("endangered", [])],
+        "dead_crews": sc.get("dead_crews", []),
+    }
+    fire_pos = dispatch_map(map_data, key="dragmap")
+    if isinstance(fire_pos, dict) and fire_pos.get("lng") is not None:
+        pos = [fire_pos["lng"], fire_pos["lat"]]
         cur = sc["fire"]["center"]
-        if pos and (abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6):
-            sc["fire"]["center"] = [pos[0], pos[1]]
+        if abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6:
+            sc["fire"]["center"] = pos
             st.session_state.event = "advance_fire"
             st.rerun()
-    st.caption("🟡 click a hotspot to move the fire — re-solves on the selected backend · "
-               "🔵 crew routes · 🟠 evac routes · 🔴 fire · 🟢 shelters · ◇ defensible · real OSM roads")
+    st.caption("🖱 drag the fire — re-solves on the selected backend · 🔵 crew routes · "
+               "🟠 evac routes · 🟢 shelters · 🔵 stations · 🟡 towns (red = threatened) · ◇ defensible")
 
 with panel:
     end = res.extra.get("endangered", [])
