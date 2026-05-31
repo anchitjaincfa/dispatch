@@ -69,6 +69,15 @@ st.markdown("""
   .d-title {font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 1.9rem;
             font-weight: 800; color: #ff6a18; letter-spacing: 1px; margin: 0;}
   .d-sub {color: #5e7a70; margin-top: -4px; font-size: 0.8rem; letter-spacing: 0.5px;}
+  /* P3.2: incident-summary ticker that types out on the cold open */
+  .ticker {font-family:'Space Mono', monospace; font-size:0.72rem; color:#7a9488;
+           white-space:nowrap; overflow:hidden; border-right:2px solid #ff6a18;
+           width:0; max-width:100%; margin-top:2px;
+           animation: typing 2.2s steps(54,end) forwards, caret .8s step-end infinite;}
+  .ticker-static {font-family:'Space Mono', monospace; font-size:0.72rem;
+                  color:#7a9488; margin-top:2px;}
+  @keyframes typing {to {width: 100%;}}
+  @keyframes caret {50% {border-color: transparent;}}
   .pill {display:inline-block; background:#0f1714; border:1px solid #1d2f28;
          border-radius: 20px; padding: 4px 12px; font-family: 'Space Mono', ui-monospace, monospace;
          font-size: 0.74rem; color:#cfe3da;}
@@ -189,6 +198,12 @@ with hc1:
     st.markdown('<div class="d-title">▣ DISPATCH</div>', unsafe_allow_html=True)
     st.markdown('<div class="d-sub">WILDFIRE OPS CONSOLE · THE MAP THAT SAVES LIVES</div>',
                 unsafe_allow_html=True)
+    _pop = sum(t["population"] for t in sc["towns"])
+    _crews = len([s for s in sc["stations"] if s["id"] not in sc.get("dead_crews", [])])
+    _summary = (f'{sc["region"]} · {len(sc["towns"])} towns · {_pop:,} residents · '
+                f'{len(sc["shelters"])} shelters · {_crews} crews')
+    _cls = "ticker" if not st.session_state.log else "ticker-static"
+    st.markdown(f'<div class="{_cls}">{_summary}</div>', unsafe_allow_html=True)
 with hcv:
     view_mode = st.radio("view", ["🗺 Real solver", "🔥 Live drag"],
                          horizontal=True, label_visibility="collapsed")
@@ -328,13 +343,19 @@ with map_col:
         "dead_crews": sc.get("dead_crews", []),
     }
     fire_pos = dispatch_map(map_data, key="dragmap")
-    if isinstance(fire_pos, dict) and fire_pos.get("lng") is not None:
-        pos = [fire_pos["lng"], fire_pos["lat"]]
-        cur = sc["fire"]["center"]
-        if abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6:
-            sc["fire"]["center"] = pos
-            st.session_state.event = "advance_fire"
-            st.rerun()
+    if isinstance(fire_pos, dict):
+        if fire_pos.get("action") == "reset":
+            # P3.4: 'R' key — dedup by nonce so it fires once per press
+            if st.session_state.get("_reset_nonce") != fire_pos.get("nonce"):
+                st.session_state._reset_nonce = fire_pos.get("nonce")
+                reset(); st.rerun()
+        elif fire_pos.get("lng") is not None:
+            pos = [fire_pos["lng"], fire_pos["lat"]]
+            cur = sc["fire"]["center"]
+            if abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6:
+                sc["fire"]["center"] = pos
+                st.session_state.event = "advance_fire"
+                st.rerun()
     st.markdown(
         '<div class="legend">'
         '<span><i class="sw" style="background:#ff6a18"></i>fire</span>'

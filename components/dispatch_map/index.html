@@ -23,11 +23,19 @@
   }
   .lbl { color:#cfe3da; font-size:10px; text-shadow:0 0 3px #000; pointer-events:none;
          transform:translate(10px,-6px); white-space:nowrap; }
+  /* P3.1: faint scanlines + edge vignette for the "ops console" feel */
+  .scanlines { position:absolute; inset:0; z-index:3; pointer-events:none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px,
+      rgba(120,255,200,0.045) 2px 3px, transparent 3px 4px); }
+  .vignette { position:absolute; inset:0; z-index:2; pointer-events:none;
+    box-shadow: inset 0 0 130px rgba(0,0,0,0.55); }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="hint">🖱 drag the fire — routes re-solve on release</div>
+<div class="vignette"></div>
+<div class="scanlines"></div>
+<div class="hint">🖱 drag the fire — routes re-solve on release · ◀▲▶▼ move · A advance · R reset</div>
 <script>
 // ---- Streamlit component handshake (bare static component, no build step) ----
 function send(type, data) {
@@ -37,7 +45,7 @@ function setValue(v) { send("streamlit:setComponentValue", { value: v, dataType:
 function ready() { send("streamlit:componentReady", { apiVersion: 1 }); }
 function frameHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
 
-let MAP = null, FIRE = null, INIT = false, NONCE = 0;
+let MAP = null, FIRE = null, INIT = false, NONCE = 0, LAST_D = null;
 // no-labels dark basemap so the FIRE and routes are the brightest things on screen (P1)
 const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
 
@@ -116,12 +124,20 @@ function update(d) {
   healIn("crew", 0.95);
   healIn("evac", 0.95);
   // move the fire handle to match server state (unless user is mid-drag)
-  if (FIRE && !FIRE._dragging) FIRE.setLngLat(d.fire.center);
+  if (FIRE && !FIRE._dragging) {
+    FIRE.setLngLat(d.fire.center);
+    // P3.3: gently keep the fire in view — only pan if it has left the viewport
+    try {
+      if (!MAP.getBounds().contains(d.fire.center))
+        MAP.easeTo({ center: d.fire.center, duration: 700 });
+    } catch (e) {}
+  }
 }
 
 function onRender(args) {
   const d = (args && args.data) || null;
   if (!d) return;
+  LAST_D = d;
   if (!INIT) {
     INIT = true;
     MAP = new maplibregl.Map({
@@ -164,6 +180,35 @@ function onRender(args) {
 
 window.addEventListener("message", (e) => {
   if (e.data && e.data.type === "streamlit:render") onRender(e.data.args);
+});
+
+// P3.4: keyboard control (the map must have focus — click it first).
+// arrows move the fire · A advances toward the towns · R resets the scenario.
+document.addEventListener("keydown", (ev) => {
+  if (!FIRE || !LAST_D) return;
+  const k = ev.key.toLowerCase();
+  if (k === "r") { ev.preventDefault(); setValue({ action: "reset", nonce: ++NONCE }); return; }
+  const ll = FIRE.getLngLat();
+  let lng = ll.lng, lat = ll.lat, moved = false;
+  const step = 0.003;
+  if (ev.key === "ArrowLeft") { lng -= step; moved = true; }
+  else if (ev.key === "ArrowRight") { lng += step; moved = true; }
+  else if (ev.key === "ArrowUp") { lat += step; moved = true; }
+  else if (ev.key === "ArrowDown") { lat -= step; moved = true; }
+  else if (k === "a") {
+    const ts = LAST_D.towns || [];
+    if (ts.length) {
+      const cx = ts.reduce((s, t) => s + t.coord[0], 0) / ts.length;
+      const cy = ts.reduce((s, t) => s + t.coord[1], 0) / ts.length;
+      lng += (cx - lng) * 0.3; lat += (cy - lat) * 0.3; moved = true;
+    }
+  }
+  if (moved) {
+    ev.preventDefault();
+    FIRE.setLngLat([lng, lat]);
+    setData("fire-area", circlePolygon([lng, lat], LAST_D.fire.radius, 48));
+    setValue({ lng: lng, lat: lat, nonce: ++NONCE });
+  }
 });
 ready();
 frameHeight(566);
