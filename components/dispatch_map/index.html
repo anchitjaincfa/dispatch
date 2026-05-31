@@ -37,13 +37,37 @@
       rgba(120,255,200,0.045) 2px 3px, transparent 3px 4px); }
   .vignette { position:absolute; inset:0; z-index:2; pointer-events:none;
     box-shadow: inset 0 0 130px rgba(0,0,0,0.55); }
+  /* D11: cold-load overlay until the first frame renders */
+  #boot { position:absolute; inset:0; z-index:9; display:flex; align-items:center;
+    justify-content:center; background:#0a0f0d; color:#ff6a18; letter-spacing:2px;
+    font-size:14px; transition:opacity .5s; }
+  #boot.hide { opacity:0; pointer-events:none; }
+  /* B5: on-map legend overlay */
+  .legend { position:absolute; left:12px; top:12px; z-index:5; pointer-events:none;
+    display:flex; flex-wrap:wrap; gap:5px 13px; max-width:62%;
+    background:rgba(12,19,16,.82); border:1px solid #1d2f28; border-radius:9px;
+    padding:8px 11px; backdrop-filter:blur(3px); font-size:10.5px; color:#9fb8ae; }
+  .legend span { display:flex; align-items:center; }
+  .legend i { display:inline-block; margin-right:5px; }
+  .lg-d { width:10px; height:10px; border-radius:50%; }
+  .lg-s { width:10px; height:10px; border-radius:2px; }
+  .lg-l { width:15px; height:0; border-top:3px solid; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="boot">▣ Initializing tactical map…</div>
 <div class="vignette"></div>
 <div class="scanlines"></div>
-<div class="hint">🖱 drag the fire to move · drag the edge dot or scroll to resize · routes re-solve on release · ◀▲▶▼/A/R keys</div>
+<div class="legend">
+  <span><i class="lg-d" style="background:#3b82f6"></i>Station / crew</span>
+  <span><i class="lg-s" style="background:#22c55e"></i>Shelter</span>
+  <span><i class="lg-d" style="background:#eab308"></i>Town</span>
+  <span><i class="lg-d" style="background:#ff7a5c"></i>Defensible pt</span>
+  <span><i class="lg-l" style="border-color:#3b82f6"></i>Crew route</span>
+  <span><i class="lg-l" style="border-top-style:dashed;border-color:#f59e0b"></i>Evac route</span>
+</div>
+<div class="hint">🖱 drag the fire to move · drag the edge dot or scroll to resize · routes re-solve on release</div>
 <script>
 // ---- Streamlit component handshake (bare static component, no build step) ----
 function send(type, data) {
@@ -53,7 +77,7 @@ function setValue(v) { send("streamlit:setComponentValue", { value: v, dataType:
 function ready() { send("streamlit:componentReady", { apiVersion: 1 }); }
 function frameHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
 
-let MAP = null, MOVE = null, RESIZE = null, INIT = false, NONCE = 0, LAST_D = null;
+let MAP = null, RESIZE = null, INIT = false, NONCE = 0, LAST_D = null;
 let READY = false, PENDING = null;   // READY gates updates (the pulse loop means the map is never "idle")
 let FIRE = [0, 0], RADIUS = 0.01;     // source of truth during interaction (degrees)
 let interacting = false, pulseT = 0;
@@ -106,13 +130,12 @@ function emberFC() {
 
 // ---- fire bloom (3 stacked circles) + pulse ----
 function drawFire() {
-  const pulse = 1 + 0.08 * Math.sin(pulseT);
-  setData("fire-halo", circlePolygon(FIRE, RADIUS * 2.6 * pulse, 44));
-  setData("fire-mid", circlePolygon(FIRE, RADIUS * 1.4 * pulse, 44));
-  setData("fire-core", circlePolygon(FIRE, RADIUS * 0.5 * pulse, 36));
-  setData("fire-ring", circlePolygon(FIRE, RADIUS * 1.4 * pulse, 44));
+  const pulse = 1 + 0.09 * Math.sin(pulseT);    // B7: bigger, brighter bloom
+  setData("fire-halo", circlePolygon(FIRE, RADIUS * 3.0 * pulse, 44));
+  setData("fire-mid", circlePolygon(FIRE, RADIUS * 1.7 * pulse, 44));
+  setData("fire-core", circlePolygon(FIRE, RADIUS * 0.62 * pulse, 36));
+  setData("fire-ring", circlePolygon(FIRE, RADIUS * 1.7 * pulse, 44));
   setData("embers", emberFC());
-  if (MOVE && !MOVE._dragging) MOVE.setLngLat(FIRE);
   if (RESIZE && !RESIZE._dragging) RESIZE.setLngLat(edgePoint());
 }
 
@@ -132,11 +155,11 @@ function buildLayers(d) {
                     "crew", "evac", "shelters", "stations", "defensible", "towns"]) {
     MAP.addSource(id, { type: "geojson", data: empty });
   }
-  // bloom (bottom -> up): halo, mid
+  // bloom (bottom -> up): halo, mid  (B7: brighter)
   MAP.addLayer({ id: "fire-halo", type: "fill", source: "fire-halo",
-    paint: { "fill-color": "#b3260a", "fill-opacity": 0.24 } });
+    paint: { "fill-color": "#b3260a", "fill-opacity": 0.30 } });
   MAP.addLayer({ id: "fire-mid", type: "fill", source: "fire-mid",
-    paint: { "fill-color": "#ff6a18", "fill-opacity": 0.42 } });
+    paint: { "fill-color": "#ff6a18", "fill-opacity": 0.52 } });
   // routes + entities over the outer bloom
   MAP.addLayer({ id: "crew", type: "line", source: "crew",
     paint: { "line-color": "#3b82f6", "line-width": 3.5, "line-opacity": 0.95,
@@ -154,24 +177,41 @@ function buildLayers(d) {
   MAP.addLayer({ id: "towns", type: "circle", source: "towns",
     paint: { "circle-radius": 6, "circle-stroke-width": 1.5, "circle-stroke-color": "#0a0f0d",
              "circle-color": ["case", ["==", ["get", "threat"], 1], "#ff5b2e", "#eab308"] } });
+  // B6: node labels (towns/shelters/stations) — Carto style provides the glyphs
+  const labelLayer = (id, src, color, dy) => ({
+    id: id, type: "symbol", source: src,
+    layout: { "text-field": ["get", "label"], "text-size": 10.5,
+              "text-offset": [0, dy], "text-anchor": "top", "text-optional": true,
+              "text-font": ["Open Sans Regular", "Noto Sans Regular"] },
+    paint: { "text-color": color, "text-halo-color": "#0a0f0d", "text-halo-width": 1.4 },
+  });
+  MAP.addLayer(labelLayer("towns-lbl", "towns", "#e8d27a", 0.9));
+  MAP.addLayer(labelLayer("shelters-lbl", "shelters", "#86efac", 0.9));
+  MAP.addLayer(labelLayer("stations-lbl", "stations", "#93c5fd", 0.9));
   // bright core + ring + embers on top
   MAP.addLayer({ id: "fire-core", type: "fill", source: "fire-core",
-    paint: { "fill-color": "#fff6d8", "fill-opacity": 0.85 } });
+    paint: { "fill-color": "#fff6d8", "fill-opacity": 0.92 } });
   MAP.addLayer({ id: "fire-ring", type: "line", source: "fire-ring",
-    paint: { "line-color": "#ffd24a", "line-width": 1.4, "line-opacity": 0.6 } });
+    paint: { "line-color": "#ffd24a", "line-width": 1.6, "line-opacity": 0.7 } });
   MAP.addLayer({ id: "embers", type: "circle", source: "embers",
-    paint: { "circle-radius": 2.2, "circle-color": "#ffd24a", "circle-opacity": ["get", "o"] } });
+    paint: { "circle-radius": 2.4, "circle-color": "#ffd24a", "circle-opacity": ["get", "o"] } });
   // initial entity data
   pushEntities(d);
 }
 
+function shortName(n) { return (n || "").split(" /")[0].split(" (")[0]; }
+
 function pushEntities(d) {
   setData("crew", fc(lineFeatures(d.crew_routes)));
   setData("evac", fc(lineFeatures(d.evac_routes)));
-  setData("shelters", fc(ptFeatures(d.shelters, s => s.coord, s => ({ name: s.name }))));
-  setData("stations", fc(ptFeatures(d.stations, s => s.coord, s => ({ dead: (d.dead_crews || []).includes(s.id) ? 1 : 0 }))));
+  setData("shelters", fc(ptFeatures(d.shelters, s => s.coord,
+    s => ({ label: shortName(s.name) + (s.capacity ? " · cap " + s.capacity : "") }))));
+  setData("stations", fc(ptFeatures(d.stations, s => s.coord,
+    s => ({ dead: (d.dead_crews || []).includes(s.id) ? 1 : 0, label: shortName(s.name) }))));
   setData("defensible", fc(ptFeatures(d.defensible, p => p.coord)));
-  setData("towns", fc(ptFeatures(d.towns, t => t.coord, t => ({ name: t.name, threat: (d.endangered || []).includes(t.id) ? 1 : 0 }))));
+  setData("towns", fc(ptFeatures(d.towns, t => t.coord,
+    t => ({ threat: (d.endangered || []).includes(t.id) ? 1 : 0,
+            label: shortName(t.name) + (t.population ? " · " + t.population : "") }))));
 }
 
 function healIn(layer, target) {
@@ -208,13 +248,29 @@ function onRender(args) {
       buildLayers(d);
       seedEmbers();
 
-      // move handle (the fiery core)
-      const me = document.createElement("div"); me.className = "fire-handle";
-      MOVE = new maplibregl.Marker({ element: me, draggable: true }).setLngLat(FIRE).addTo(MAP);
-      MOVE._dragging = false;
-      MOVE.on("dragstart", () => { MOVE._dragging = true; interacting = true; });
-      MOVE.on("drag", () => { const ll = MOVE.getLngLat(); FIRE = [ll.lng, ll.lat]; });
-      MOVE.on("dragend", () => { MOVE._dragging = false; interacting = false; postFire(); });
+      // B4: drag the WHOLE fire under the cursor — mousedown on any fire layer,
+      // pan disabled while dragging, re-solve fired on release.
+      let bodyDrag = false;
+      const FIRE_LAYERS = ["fire-halo", "fire-mid", "fire-core"];
+      const startBody = (e) => {
+        e.preventDefault(); bodyDrag = true; interacting = true;
+        MAP.dragPan.disable(); MAP.getCanvas().style.cursor = "grabbing";
+      };
+      for (const fl of FIRE_LAYERS) {
+        MAP.on("mouseenter", fl, () => { if (!bodyDrag) MAP.getCanvas().style.cursor = "grab"; });
+        MAP.on("mouseleave", fl, () => { if (!bodyDrag) MAP.getCanvas().style.cursor = ""; });
+        MAP.on("mousedown", fl, startBody);
+        MAP.on("touchstart", fl, startBody);
+      }
+      MAP.on("mousemove", (e) => { if (bodyDrag) FIRE = [e.lngLat.lng, e.lngLat.lat]; });
+      MAP.on("touchmove", (e) => { if (bodyDrag) FIRE = [e.lngLat.lng, e.lngLat.lat]; });
+      const endBody = () => {
+        if (!bodyDrag) return;
+        bodyDrag = false; interacting = false;
+        MAP.dragPan.enable(); MAP.getCanvas().style.cursor = ""; postFire();
+      };
+      MAP.on("mouseup", endBody);
+      MAP.on("touchend", endBody);
 
       // resize handle (edge dot)
       const re = document.createElement("div"); re.className = "resize-handle";
@@ -243,6 +299,10 @@ function onRender(args) {
       READY = true;
       requestAnimationFrame(animate);
       if (PENDING) { update(PENDING); PENDING = null; }   // apply data that arrived during load
+      MAP.once("idle", () => {                            // D11: drop the boot overlay once drawn
+        const b = document.getElementById("boot"); if (b) b.classList.add("hide");
+      });
+      setTimeout(() => { const b = document.getElementById("boot"); if (b) b.classList.add("hide"); }, 2500);
     });
     MAP.on("error", (e) => console.error("maplibre error", e && e.error));
   } else if (READY) {

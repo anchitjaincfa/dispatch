@@ -98,8 +98,8 @@ st.markdown("""
            padding:14px 12px; text-align:center;}
   .metric .mv {font-size:28px; font-weight:700; line-height:1;
                font-family:'Space Grotesk', system-ui, sans-serif;}
-  .metric .ml {font-size:11px; color:#5e7a70; text-transform:uppercase;
-               letter-spacing:0.08em; margin-top:4px;}
+  .metric .ml {font-size:10px; color:#5e7a70; text-transform:uppercase;
+               letter-spacing:0.03em; margin-top:4px; white-space:nowrap;}
   .evac-ok {color:#cfe3da;} .evac-bad {color:#ff7a5c; font-weight:700;}
   .capbar {height:7px; background:#15241d; border-radius:4px; overflow:hidden; margin-top:3px;}
   .capfill {height:7px; border-radius:4px;}
@@ -234,7 +234,7 @@ solver = make_solver(backend_label)
 with st.sidebar:
     st.markdown("### ◤ Incident")
     crisis = st.text_area(
-        "operator brief", height=110,
+        "operator brief", height=150,
         value="Wildfire ignited in the Oakland Hills near Hwy 24, wind pushing it "
               "west toward Forest Park and Claremont. 5 crews staged, 3 shelters online. "
               "Protect the towns and get everyone out.")
@@ -269,20 +269,21 @@ with st.sidebar:
             "agree": snap_c.evac_assignment == snap_q.evac_assignment,
         }
 
-    # Real IBM QPU run (OPT-IN — uses the ~10-min monthly quota; may queue)
-    if st.button("▶ Run QAOA on real IBM QPU", use_container_width=True,
-                 help="Submits the assignment QAOA to a real 156-qubit IBM QPU. "
-                      "Uses your ~10-min monthly Open-plan quota and may queue ~1 min."):
-        from core import evacuate
-        from solver.quantum_solver import run_qaoa_on_ibm
-        try:
-            with st.spinner("Submitting to IBM QPU — may queue ~1 min…"):
-                _blocked = hazard.blocked_nodes(roadnet, sc)
-                _prob = evacuate.build_evac_problem(roadnet, sc, _blocked)
-                _, _meta = run_qaoa_on_ibm(_prob)
-            st.session_state.ibm_snapshot = _meta
-        except Exception as exc:
-            st.session_state.ibm_snapshot = {"error": f"{type(exc).__name__}: {str(exc)[:140]}"}
+    # Real IBM QPU run (OPT-IN — guarded by a confirm, since it spends ~10-min quota)
+    with st.popover("▶ Run QAOA on real IBM QPU", use_container_width=True):
+        st.caption("⚠ Submits the assignment QAOA to a real **156-qubit IBM QPU** and "
+                   "spends part of your **~10-min/month** Open-plan quota. May queue ~1 min.")
+        if st.button("Confirm — run on IBM QPU", type="primary", use_container_width=True):
+            from core import evacuate
+            from solver.quantum_solver import run_qaoa_on_ibm
+            try:
+                with st.spinner("Submitting to IBM QPU — may queue ~1 min…"):
+                    _blocked = hazard.blocked_nodes(roadnet, sc)
+                    _prob = evacuate.build_evac_problem(roadnet, sc, _blocked)
+                    _, _meta = run_qaoa_on_ibm(_prob)
+                st.session_state.ibm_snapshot = _meta
+            except Exception as exc:
+                st.session_state.ibm_snapshot = {"error": f"{type(exc).__name__}: {str(exc)[:140]}"}
 
     with st.expander("Advanced controls"):
         a1, a2 = st.columns(2)
@@ -358,8 +359,10 @@ with map_col:
     map_data = {
         "center": sc["center"], "zoom": sc.get("zoom", 12.2),
         "fire": {"center": sc["fire"]["center"], "radius": sc["fire"]["radius"]},
-        "towns": [{"id": t["id"], "name": t["name"], "coord": t["coord"]} for t in sc["towns"]],
-        "shelters": [{"id": s["id"], "name": s["name"], "coord": s["coord"]} for s in sc["shelters"]],
+        "towns": [{"id": t["id"], "name": t["name"], "coord": t["coord"],
+                   "population": t["population"]} for t in sc["towns"]],
+        "shelters": [{"id": s["id"], "name": s["name"], "coord": s["coord"],
+                      "capacity": s["capacity"]} for s in sc["shelters"]],
         "stations": [{"id": s["id"], "name": s["name"], "coord": s["coord"]} for s in sc["stations"]],
         "defensible": [{"id": d["id"], "coord": d["coord"]} for d in sc["defensible"]],
         "crew_routes": res.crew_routes,
@@ -382,16 +385,7 @@ with map_col:
                                        float(fire_pos.get("radius", sc["fire"]["radius"]))))
             st.session_state.event = "advance_fire"
             st.rerun()
-    st.markdown(
-        '<div class="legend">'
-        '<span><i class="sw" style="background:#ff6a18"></i>fire</span>'
-        '<span><i class="swl" style="border-color:#3b82f6"></i>crew route</span>'
-        '<span><i class="swl" style="border-top-style:dashed;border-color:#f59e0b"></i>evac route</span>'
-        '<span><i class="sw" style="background:#eab308"></i>town</span>'
-        '<span><i class="sw" style="background:#22c55e"></i>shelter</span>'
-        '<span><i class="sw" style="background:#3b82f6"></i>station</span>'
-        '<span style="color:#5e7a70">🖱 drag the fire to re-solve</span>'
-        '</div>', unsafe_allow_html=True)
+    # legend is now an on-map overlay inside the component (B5)
 
     # ===== Baseline vs DISPATCH — the "it's really optimizing" judge moment =====
     try:
