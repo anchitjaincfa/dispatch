@@ -329,12 +329,25 @@ with st.sidebar:
             sc["fire"]["radius"] = max(sc["fire"]["radius"]*0.85, 0.004); st.session_state.event = "advance_fire"
 
 # ----------------------------- solve ----------------------------------------
-res = solver.solve(QUBOProblem(metadata=sc))
+# STEP 2: never swallow a solver failure — on error, keep the LAST-GOOD result and
+# surface an infeasible/error badge instead of rendering blank.
+st.session_state.solve_id = st.session_state.get("solve_id", 0) + 1
+solve_error = None
+try:
+    res = solver.solve(QUBOProblem(metadata=sc))
+except Exception as exc:
+    solve_error = f"{type(exc).__name__}: {str(exc)[:160]}"
+    res = st.session_state.get("prev")            # fall back to last-good routes
+if res is None:                                   # only if the very first solve failed
+    st.error(f"Solver failed with no prior result · {solve_error}")
+    st.stop()
 event = st.session_state.event
-line = narrate.narrate(event, st.session_state.prev, res, sc, use_claude=use_claude)
-if line and (not st.session_state.log or st.session_state.log[0]["text"] != line):
-    log(line)
-st.session_state.prev = res
+if solve_error is None:
+    line = narrate.narrate(event, st.session_state.prev, res, sc, use_claude=use_claude)
+    if line and (not st.session_state.log or st.session_state.log[0]["text"] != line):
+        log(line)
+    st.session_state.prev = res
+st.session_state.solve_error = solve_error
 st.session_state.event = "tick"
 
 # ----------------------------- layout ---------------------------------------
@@ -344,10 +357,17 @@ with map_col:
     # P0.3: only show qubit count for the quantum/accelerated backends — never on classical
     is_classical = backend_label.startswith("classical")
     qbit = "" if is_classical else f' · {res.extra.get("qubits", "–")} qubits'
+    badge = ""
+    if st.session_state.get("solve_error"):
+        badge = ('&nbsp;<span class="pill" style="border-color:#ff7a5c;color:#ff7a5c">'
+                 '⚠ INFEASIBLE — showing last-good plan</span>')
+    elif not res.feasible:
+        badge = ('&nbsp;<span class="pill" style="border-color:#f59e0b;color:#f59e0b">'
+                 '⚠ over capacity</span>')
     st.markdown(
         f'<span class="pill"><span class="dot"></span>SOLVER ONLINE · backend: '
         f'<b>{backend_short}</b> · {res.wall_ms:.0f} ms{qbit}</span> '
-        f'&nbsp;<span class="pill">{sc["region"]}</span>', unsafe_allow_html=True)
+        f'&nbsp;<span class="pill">{sc["region"]}</span>{badge}', unsafe_allow_html=True)
     map_data = {
         "center": sc["center"], "zoom": sc.get("zoom", 12.2),
         "fire": {"center": sc["fire"]["center"], "radius": sc["fire"]["radius"]},
@@ -361,22 +381,20 @@ with map_col:
         "dead_crews": sc.get("dead_crews", []),
     }
     fire_pos = dispatch_map(map_data, key="dragmap")
-    if isinstance(fire_pos, dict):
+    # STEP 1/5: the component value is STICKY (persists across reruns). Act on it ONCE
+    # per nonce so an old drag value can never re-apply or fight the sidebar fire
+    # controls. session_state.scenario is the single source of truth.
+    if isinstance(fire_pos, dict) and fire_pos.get("nonce") is not None \
+            and fire_pos.get("nonce") != st.session_state.get("_fire_nonce"):
+        st.session_state._fire_nonce = fire_pos.get("nonce")
         if fire_pos.get("action") == "reset":
-            # P3.4: 'R' key — dedup by nonce so it fires once per press
-            if st.session_state.get("_reset_nonce") != fire_pos.get("nonce"):
-                st.session_state._reset_nonce = fire_pos.get("nonce")
-                reset(); st.rerun()
+            reset(); st.rerun()
         elif fire_pos.get("lng") is not None:
-            pos = [fire_pos["lng"], fire_pos["lat"]]
-            rad = float(fire_pos.get("radius", sc["fire"]["radius"]))
-            cur, cur_r = sc["fire"]["center"], sc["fire"]["radius"]
-            if (abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6
-                    or abs(rad - cur_r) > 1e-6):
-                sc["fire"]["center"] = pos
-                sc["fire"]["radius"] = max(0.004, min(0.035, rad))
-                st.session_state.event = "advance_fire"
-                st.rerun()
+            sc["fire"]["center"] = [fire_pos["lng"], fire_pos["lat"]]
+            sc["fire"]["radius"] = max(0.004, min(0.035,
+                                       float(fire_pos.get("radius", sc["fire"]["radius"]))))
+            st.session_state.event = "advance_fire"
+            st.rerun()
     st.markdown(
         '<div class="legend">'
         '<span><i class="sw" style="background:#ff6a18"></i>fire</span>'
@@ -526,3 +544,36 @@ with st.expander("📈 Scaling — why latency is the product (honest benchmark)
                    "heuristic core stays exact as it scales.")
     else:
         st.caption("Click **Run scaling benchmark** to generate the chart.")
+
+
+# ----------------------------- debug panel (STEP 0) -------------------------
+import math as _math
+
+
+def _valid_path(p):
+    return (isinstance(p, list) and len(p) >= 2
+            and all(isinstance(pt, (list, tuple)) and len(pt) == 2
+                    and all(isinstance(c, (int, float)) and _math.isfinite(c) for c in pt)
+                    for pt in p))
+
+
+if st.sidebar.checkbox("🐞 debug", value=False):
+    crew_r, evac_r = res.crew_routes, res.evac_routes
+    bad = ([k for k, p in crew_r.items() if not _valid_path(p)]
+           + [k for k, p in evac_r.items() if not _valid_path(p)])
+    with st.expander("🐞 render debug — every rerun", expanded=True):
+        st.write({
+            "solve_id": st.session_state.get("solve_id"),
+            "fire_center": [round(c, 5) for c in sc["fire"]["center"]],
+            "fire_radius": round(sc["fire"]["radius"], 5),
+            "fire_nonce": st.session_state.get("_fire_nonce"),
+            "len(crew_routes)": len(crew_r),
+            "len(evac_routes)": len(evac_r),
+            "invalid_paths (STEP 3)": bad,
+            "feasible": res.feasible,
+            "backend": res.backend,
+            "wall_ms": res.wall_ms,
+            "solve_error (STEP 2)": st.session_state.get("solve_error"),
+            "blocked_nodes": res.extra.get("blocked_nodes"),
+            "compromised_evacs": res.extra.get("compromised_evacs"),
+        })
