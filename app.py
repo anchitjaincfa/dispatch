@@ -46,15 +46,18 @@ from core import geo, hazard
 from solver import (ClassicalSolver, QuantumSolver, XpyQSolver, QUBOProblem)
 
 SCENARIO_PATH = os.path.join(HERE, "data", "scenario_berkeley.json")
-SCENARIO_PATH = os.path.join(HERE, "data", "scenario_berkeley.json")
 
-st.set_page_config(page_title="DISPATCH", layout="wide", page_icon="🔥")
+st.set_page_config(page_title="DISPATCH", layout="wide", page_icon="🔥",
+                   initial_sidebar_state="expanded")
 
 # ----------------------------- design tokens --------------------------------
 st.markdown("""
 <style>
+  /* P0: kill Streamlit chrome (toolbar, hamburger, Deploy, footer) */
+  #MainMenu, header[data-testid="stHeader"], footer,
+  [data-testid="stToolbar"], [data-testid="stDecoration"] {visibility:hidden; height:0;}
   .stApp {background: #0a0f0d;}
-  .block-container {padding-top: 1.0rem; padding-bottom: 0.4rem; max-width: 100%;}
+  .block-container {padding-top: 1rem; padding-bottom: 0; max-width: 100%;}
   .d-title {font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 1.9rem;
             font-weight: 800; color: #ff6a18; letter-spacing: 1px; margin: 0;}
   .d-sub {color: #5e7a70; margin-top: -4px; font-size: 0.8rem; letter-spacing: 0.5px;}
@@ -66,10 +69,12 @@ st.markdown("""
   .narr {background:#0f1714; color:#cfe3da; border-left:3px solid #ff6a18;
          padding:8px 12px; border-radius:8px; font-family: ui-monospace, monospace;
          font-size:0.8rem; margin-bottom:5px;}
-  .chip {background:#0f1714; border:1px solid #1d2f28; border-radius:10px;
-         padding:10px 12px; text-align:center;}
-  .chip .v {font-size:1.5rem; font-weight:800; color:#cfe3da; font-family:'Space Grotesk',sans-serif;}
-  .chip .k {font-size:0.68rem; color:#5e7a70; text-transform:uppercase; letter-spacing:0.5px;}
+  .metric {background:#0f1714; border:1px solid #1d2f28; border-radius:10px;
+           padding:14px 12px; text-align:center;}
+  .metric .mv {font-size:28px; font-weight:700; line-height:1;
+               font-family:'Space Grotesk', system-ui, sans-serif;}
+  .metric .ml {font-size:11px; color:#5e7a70; text-transform:uppercase;
+               letter-spacing:0.08em; margin-top:4px;}
   .evac-ok {color:#cfe3da;} .evac-bad {color:#ff7a5c; font-weight:700;}
   .capbar {height:7px; background:#15241d; border-radius:4px; overflow:hidden; margin-top:3px;}
   .capfill {height:7px; border-radius:4px;}
@@ -129,6 +134,11 @@ _dispatch_map_component = components.declare_component("dispatch_map", path=_DRA
 
 def dispatch_map(data, key=None):
     return _dispatch_map_component(data=data, key=key, default=None)
+
+
+def metric_card(value, label, color="#e8f3ee"):
+    return (f'<div class="metric"><div class="mv" style="color:{color}">{value}</div>'
+            f'<div class="ml">{label}</div></div>')
 
 
 @st.cache_data(show_spinner="Sweeping instance sizes…")
@@ -203,7 +213,7 @@ with st.sidebar:
         st.caption(f"parsed by **{p.source}** agent → "
                    f"crews: {p.num_crews or len(sc['stations'])} · "
                    f"shelters: {p.num_shelters or len(sc['shelters'])} · "
-                   f"at risk: {', '.join(p.towns_at_risk) or '—'}")
+                   f"towns named: {', '.join(p.towns_at_risk) or '—'}")
 
     st.markdown("### ◤ Perturb the scene")
     c1, c2 = st.columns(2)
@@ -254,9 +264,12 @@ st.session_state.event = "tick"
 map_col, panel = st.columns([3, 1.15])
 with map_col:
     backend_short = res.backend
+    # P0.3: only show qubit count for the quantum/accelerated backends — never on classical
+    is_classical = backend_label.startswith("classical")
+    qbit = "" if is_classical else f' · {res.extra.get("qubits", "–")} qubits'
     st.markdown(
         f'<span class="pill"><span class="dot"></span>SOLVER ONLINE · backend: '
-        f'<b>{backend_short}</b> · {res.wall_ms:.0f} ms · {res.extra.get("qubits","–")} qubits</span> '
+        f'<b>{backend_short}</b> · {res.wall_ms:.0f} ms{qbit}</span> '
         f'&nbsp;<span class="pill">{sc["region"]}</span>', unsafe_allow_html=True)
     map_data = {
         "center": sc["center"], "zoom": sc.get("zoom", 12.2),
@@ -282,12 +295,14 @@ with map_col:
                "🟠 evac routes · 🟢 shelters · 🔵 stations · 🟡 towns (red = threatened) · ◇ defensible")
 
 with panel:
-    end = res.extra.get("endangered", [])
+    end = res.extra.get("endangered", [])           # SAME geometric threat the narrator uses
     a, b, c = st.columns(3)
-    a.markdown(f'<div class="chip"><div class="v">{len(end)}</div><div class="k">Towns at risk</div></div>', unsafe_allow_html=True)
-    b.markdown(f'<div class="chip"><div class="v">{len(res.crew_routes)}</div><div class="k">Crews routed</div></div>', unsafe_allow_html=True)
-    cap_badge = "OK" if res.feasible else "OVER"
-    c.markdown(f'<div class="chip"><div class="v">{cap_badge}</div><div class="k">Capacity</div></div>', unsafe_allow_html=True)
+    risk_color = "#f59e0b" if len(end) > 0 else "#e8f3ee"      # amber when any town is exposed
+    a.markdown(metric_card(len(end), "Towns at risk", risk_color), unsafe_allow_html=True)
+    b.markdown(metric_card(len(res.crew_routes), "Crews routed"), unsafe_allow_html=True)
+    cap_val = "OK" if res.feasible else "!!"
+    cap_color = "#4ade80" if res.feasible else "#ff7a5c"      # green ok / red on capacity breach
+    c.markdown(metric_card(cap_val, "Capacity", cap_color), unsafe_allow_html=True)
 
     st.markdown("##### Dispatcher")
     if not st.session_state.log:
