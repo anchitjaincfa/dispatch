@@ -249,37 +249,51 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     if c1.button("▸▸ Advance fire", use_container_width=True):
         hazard.advance_fire(sc); st.session_state.event = "advance_fire"
-    if c2.button("⊘ Close a road", use_container_width=True):
-        import random
-        f = sc["fire"]["center"]
-        sc.setdefault("closed_roads", []).append(
-            [f[0] + random.uniform(-0.015, 0.015), f[1] + random.uniform(-0.015, 0.015)])
-        st.session_state.event = "close_road"
-    live = [s for s in sc["stations"] if s["id"] not in sc.get("dead_crews", [])]
-    if c1.button("✕ Lose crew", use_container_width=True) and live:
-        import math
-        f = sc["fire"]["center"]
-        nearest = min(live, key=lambda s: math.hypot(s["coord"][0]-f[0], s["coord"][1]-f[1]))
-        sc.setdefault("dead_crews", []).append(nearest["id"]); st.session_state.event = "lose_crew"
     if c2.button("⟲ Reset", use_container_width=True):
         reset(); sc = st.session_state.scenario
 
-    st.caption("Move the fire (routes re-solve live):")
-    n1, n2, n3 = st.columns(3)
-    step = 0.004
-    if n2.button("▲", use_container_width=True):
-        hazard.nudge_fire(sc, dlat=step); st.session_state.event = "advance_fire"
-    if n1.button("◀", use_container_width=True):
-        hazard.nudge_fire(sc, dlng=-step); st.session_state.event = "advance_fire"
-    if n3.button("▶", use_container_width=True):
-        hazard.nudge_fire(sc, dlng=step); st.session_state.event = "advance_fire"
-    if n2.button("▼", use_container_width=True):
-        hazard.nudge_fire(sc, dlat=-step); st.session_state.event = "advance_fire"
-    g1, g2 = st.columns(2)
-    if g1.button("＋ grow fire", use_container_width=True):
-        sc["fire"]["radius"] = min(sc["fire"]["radius"]*1.18, 0.035); st.session_state.event = "advance_fire"
-    if g2.button("－ shrink", use_container_width=True):
-        sc["fire"]["radius"] = max(sc["fire"]["radius"]*0.85, 0.004); st.session_state.event = "advance_fire"
+    # P2.4: criterion-#3 demo beat — run the current snapshot on XpyQ vs the classical baseline
+    if st.button("▶ Solve snapshot on XpyQ", use_container_width=True, type="primary"):
+        snap_c = ClassicalSolver(roadnet).solve(QUBOProblem(metadata=sc))
+        snap_q = XpyQSolver(roadnet).solve(QUBOProblem(metadata=sc))
+        st.session_state.snapshot = {
+            "c_wall": snap_c.wall_ms, "c_obj": snap_c.objective,
+            "q_wall": snap_q.wall_ms, "q_obj": snap_q.objective,
+            "q_qubits": snap_q.extra.get("qubits"),
+            "q_method": snap_q.extra.get("method", "XpyQ /decisions"),
+            "agree": snap_c.evac_assignment == snap_q.evac_assignment,
+        }
+
+    with st.expander("Advanced controls"):
+        a1, a2 = st.columns(2)
+        if a1.button("⊘ Close a road", use_container_width=True):
+            import random
+            f = sc["fire"]["center"]
+            sc.setdefault("closed_roads", []).append(
+                [f[0] + random.uniform(-0.015, 0.015), f[1] + random.uniform(-0.015, 0.015)])
+            st.session_state.event = "close_road"
+        live = [s for s in sc["stations"] if s["id"] not in sc.get("dead_crews", [])]
+        if a2.button("✕ Lose crew", use_container_width=True) and live:
+            import math
+            f = sc["fire"]["center"]
+            nearest = min(live, key=lambda s: math.hypot(s["coord"][0]-f[0], s["coord"][1]-f[1]))
+            sc.setdefault("dead_crews", []).append(nearest["id"]); st.session_state.event = "lose_crew"
+        st.caption("Nudge the fire (routes re-solve live):")
+        n1, n2, n3 = st.columns(3)
+        step = 0.004
+        if n2.button("▲", use_container_width=True):
+            hazard.nudge_fire(sc, dlat=step); st.session_state.event = "advance_fire"
+        if n1.button("◀", use_container_width=True):
+            hazard.nudge_fire(sc, dlng=-step); st.session_state.event = "advance_fire"
+        if n3.button("▶", use_container_width=True):
+            hazard.nudge_fire(sc, dlng=step); st.session_state.event = "advance_fire"
+        if n2.button("▼", use_container_width=True):
+            hazard.nudge_fire(sc, dlat=-step); st.session_state.event = "advance_fire"
+        g1, g2 = st.columns(2)
+        if g1.button("＋ grow fire", use_container_width=True):
+            sc["fire"]["radius"] = min(sc["fire"]["radius"]*1.18, 0.035); st.session_state.event = "advance_fire"
+        if g2.button("－ shrink", use_container_width=True):
+            sc["fire"]["radius"] = max(sc["fire"]["radius"]*0.85, 0.004); st.session_state.event = "advance_fire"
 
 # ----------------------------- solve ----------------------------------------
 res = solver.solve(QUBOProblem(metadata=sc))
@@ -331,6 +345,25 @@ with map_col:
         '<span><i class="sw" style="background:#3b82f6"></i>station</span>'
         '<span style="color:#5e7a70">🖱 drag the fire to re-solve</span>'
         '</div>', unsafe_allow_html=True)
+
+    # P2.4: XpyQ vs classical snapshot comparison (set by the sidebar button)
+    snap = st.session_state.get("snapshot")
+    if snap:
+        st.markdown("##### ⚛ Quantum snapshot — same QUBO, both backends")
+        s1, s2, s3 = st.columns(3)
+        s1.markdown(metric_card(f'{snap["c_wall"]:.0f} ms', "Classical · OR-Tools"),
+                    unsafe_allow_html=True)
+        s2.markdown(metric_card(f'{snap["q_wall"]:.0f} ms',
+                                f'XpyQ · {snap.get("q_qubits", "–")} qubits', "#ff6a18"),
+                    unsafe_allow_html=True)
+        agree_txt = "✓ agree" if snap["agree"] else "✗ differ"
+        s3.markdown(metric_card(agree_txt, "assignments",
+                                "#4ade80" if snap["agree"] else "#ff7a5c"),
+                    unsafe_allow_html=True)
+        st.caption(f'XpyQ method: {snap["q_method"]}.  Both minimize the identical '
+                   "town→shelter QUBO. At demo scale OR-Tools wins on speed — the point is the "
+                   "mapping is real and **re-solve latency is the binding constraint**, not a "
+                   "production quantum speed advantage.")
 
 with panel:
     end = res.extra.get("endangered", [])           # SAME geometric threat the narrator uses

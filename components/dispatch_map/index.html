@@ -80,9 +80,11 @@ function buildLayers(d) {
   MAP.addLayer({ id: "fire-ring", type: "line", source: "fire-area",
     paint: { "line-color": "#ffd24a", "line-width": 1.5, "line-opacity": 0.7 } });
   MAP.addLayer({ id: "crew", type: "line", source: "crew",
-    paint: { "line-color": "#3b82f6", "line-width": 3.5, "line-opacity": 0.95 } });
+    paint: { "line-color": "#3b82f6", "line-width": 3.5, "line-opacity": 0.95,
+             "line-opacity-transition": { duration: 320 } } });
   MAP.addLayer({ id: "evac", type: "line", source: "evac",
-    paint: { "line-color": "#f59e0b", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.95 } });
+    paint: { "line-color": "#f59e0b", "line-width": 3, "line-dasharray": [2, 1.5],
+             "line-opacity": 0.95, "line-opacity-transition": { duration: 320 } } });
   MAP.addLayer({ id: "defensible", type: "circle", source: "defensible",
     paint: { "circle-radius": 4, "circle-color": "#ff7a5c", "circle-opacity": 0.7 } });
   MAP.addLayer({ id: "stations", type: "circle", source: "stations",
@@ -95,6 +97,14 @@ function buildLayers(d) {
              "circle-color": ["case", ["==", ["get", "threat"], 1], "#ff5b2e", "#eab308"] } });
 }
 
+function healIn(layer, target) {
+  // fade the route layer out then back in, so a re-solve reads as the map "healing"
+  if (!MAP.getLayer(layer)) return;
+  MAP.setPaintProperty(layer, "line-opacity", 0);
+  requestAnimationFrame(() => requestAnimationFrame(() =>
+    MAP.setPaintProperty(layer, "line-opacity", target)));
+}
+
 function update(d) {
   setData("fire-area", circlePolygon(d.fire.center, d.fire.radius, 48));
   setData("crew", fc(lineFeatures(d.crew_routes)));
@@ -103,6 +113,8 @@ function update(d) {
   setData("stations", fc(ptFeatures(d.stations, s => s.coord, s => ({ dead: (d.dead_crews || []).includes(s.id) ? 1 : 0 }))));
   setData("defensible", fc(ptFeatures(d.defensible, p => p.coord)));
   setData("towns", fc(ptFeatures(d.towns, t => t.coord, t => ({ name: t.name, threat: (d.endangered || []).includes(t.id) ? 1 : 0 }))));
+  healIn("crew", 0.95);
+  healIn("evac", 0.95);
   // move the fire handle to match server state (unless user is mid-drag)
   if (FIRE && !FIRE._dragging) FIRE.setLngLat(d.fire.center);
 }
