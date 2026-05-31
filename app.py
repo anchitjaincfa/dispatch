@@ -282,6 +282,21 @@ with st.sidebar:
             "agree": snap_c.evac_assignment == snap_q.evac_assignment,
         }
 
+    # Real IBM QPU run (OPT-IN — uses the ~10-min monthly quota; may queue)
+    if st.button("▶ Run QAOA on real IBM QPU", use_container_width=True,
+                 help="Submits the assignment QAOA to a real 156-qubit IBM QPU. "
+                      "Uses your ~10-min monthly Open-plan quota and may queue ~1 min."):
+        from core import evacuate
+        from solver.quantum_solver import run_qaoa_on_ibm
+        try:
+            with st.spinner("Submitting to IBM QPU — may queue ~1 min…"):
+                _blocked = hazard.blocked_nodes(roadnet, sc)
+                _prob = evacuate.build_evac_problem(roadnet, sc, _blocked)
+                _, _meta = run_qaoa_on_ibm(_prob)
+            st.session_state.ibm_snapshot = _meta
+        except Exception as exc:
+            st.session_state.ibm_snapshot = {"error": f"{type(exc).__name__}: {str(exc)[:140]}"}
+
     with st.expander("Advanced controls"):
         a1, a2 = st.columns(2)
         if a1.button("⊘ Close a road", use_container_width=True):
@@ -391,6 +406,25 @@ with map_col:
                    f'{"feasible plan that drove the map" if snap.get("q_drove") else "result we verified classically"}. '
                    "Same town→shelter QUBO as OR-Tools — proving the mapping is real and that "
                    "**re-solve latency is the binding constraint**, not a quantum speed claim.")
+
+    ibm = st.session_state.get("ibm_snapshot")
+    if ibm:
+        if ibm.get("error"):
+            st.warning(f"IBM QPU run failed: {ibm['error']}")
+        else:
+            st.markdown("##### ⚛ Real IBM QPU run")
+            i1, i2, i3 = st.columns(3)
+            i1.markdown(metric_card(ibm["ibm_backend"], "QPU", "#ff6a18"), unsafe_allow_html=True)
+            i2.markdown(metric_card(f'{ibm["qubits"]}q',
+                                    f'on {ibm["ibm_qubits_device"]}q device'), unsafe_allow_html=True)
+            i3.markdown(metric_card("feasible" if ibm.get("feasible") else "noisy",
+                                    "QPU result",
+                                    "#4ade80" if ibm.get("feasible") else "#f59e0b"),
+                        unsafe_allow_html=True)
+            st.caption(f'Job `{ibm["ibm_job_id"]}` on **{ibm["ibm_backend"]}** · '
+                       f'{ibm["shots"]} shots · best sampled energy {ibm["qaoa_energy"]}. '
+                       "REAL gate-model hardware — NISQ noise means it may not hit the exact "
+                       "optimum, and being honest about that is the point.")
 
 with panel:
     end = res.extra.get("endangered", [])           # SAME geometric threat the narrator uses

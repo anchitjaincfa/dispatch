@@ -124,6 +124,72 @@ def _run_qaoa_subproblem(subprob):
     return best, float(best_e)
 
 
+IBM_SHOTS = 2048
+
+
+def run_qaoa_on_ibm(prob, shots=IBM_SHOTS):
+    """Execute the assignment QAOA on a REAL IBM QPU via Qiskit Runtime — OPT-IN,
+    uses the ~10-min/month Open-plan quota. Batches the whole (beta,gamma) grid as ONE
+    job to minimise QPU time. Returns (choice, meta). Needs IBM_QUANTUM_TOKEN +
+    IBM_QUANTUM_INSTANCE (the CRN). Raises on any failure (caller can fall back)."""
+    import os
+    import time as _time
+
+    from qiskit.circuit.library import QAOAAnsatz
+    from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+    from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
+
+    token = os.environ.get("IBM_QUANTUM_TOKEN")
+    instance = os.environ.get("IBM_QUANTUM_INSTANCE")
+    if not token or not instance:
+        raise RuntimeError("set IBM_QUANTUM_TOKEN and IBM_QUANTUM_INSTANCE")
+
+    n = prob.num_qubits()
+    S, T = prob.S, prob.T
+    Q, _, _ = qubo.to_qubo_matrix(prob)
+    ansatz = QAOAAnsatz(cost_operator=_qubo_to_ising(Q, n), reps=1)
+
+    svc = QiskitRuntimeService(channel="ibm_quantum_platform", token=token, instance=instance)
+    backend = svc.least_busy(operational=True, simulator=False)
+    pm = generate_preset_pass_manager(optimization_level=1, backend=backend)
+
+    isas = []
+    for beta, gamma in QAOA_PARAM_GRID:
+        binding = {prm: (beta if ("β" in prm.name or "beta" in prm.name.lower()) else gamma)
+                   for prm in ansatz.parameters}
+        circ = ansatz.assign_parameters(binding)
+        circ.measure_all()
+        isas.append(pm.run(circ))
+
+    t0 = _time.time()
+    job = SamplerV2(mode=backend).run(isas, shots=shots)
+    result = job.result()
+    wall = (_time.time() - t0) * 1000.0
+
+    best, best_e = None, float("inf")
+    for pub in result:
+        counts = pub.data.meas.get_counts()
+        for bitstr in counts:
+            x = [int(bitstr[n - 1 - k]) for k in range(n)]
+            choice = [max(range(S), key=lambda j: x[i * S + j]) for i in range(T)]
+            e = qubo.energy(prob, choice)
+            if e < best_e:
+                best_e, best = e, choice
+    if best is None:
+        raise RuntimeError("IBM QPU returned no samples")
+    return best, {
+        "method": f"QAOA on REAL IBM QPU · {backend.name}",
+        "ibm_backend": backend.name,
+        "ibm_job_id": job.job_id(),
+        "ibm_qubits_device": backend.num_qubits,
+        "qubits": n,
+        "shots": shots,
+        "ibm_wall_ms": round(wall),
+        "qaoa_energy": round(best_e, 1),
+        "feasible": qubo.feasible(prob, best),
+    }
+
+
 def qaoa_assign(prob):
     # full-map baseline from the annealer
     base_choice, base_meta = annealer_assign(prob)

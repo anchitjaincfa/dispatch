@@ -16,3 +16,4 @@ anthropic>=0.25     # agent NL parse + narration; falls back to deterministic
 qiskit>=1.0         # quantum QAOA; falls back to numpy simulated-annealer
 qiskit-aer>=0.14
 qiskit-optimization>=0.6
+qiskit-ibm-runtime>=0.30   # opt-in: run QAOA on a real IBM QPU (needs IBM_QUANTUM_TOKEN+INSTANCE)
