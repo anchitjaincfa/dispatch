@@ -54,6 +54,7 @@ function ready() { send("streamlit:componentReady", { apiVersion: 1 }); }
 function frameHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
 
 let MAP = null, MOVE = null, RESIZE = null, INIT = false, NONCE = 0, LAST_D = null;
+let READY = false, PENDING = null;   // READY gates updates (the pulse loop means the map is never "idle")
 let FIRE = [0, 0], RADIUS = 0.01;     // source of truth during interaction (degrees)
 let interacting = false, pulseT = 0;
 const RMIN = 0.004, RMAX = 0.035;
@@ -239,13 +240,15 @@ function onRender(args) {
 
       frameHeight(566);
       setTimeout(() => { if (MAP) MAP.resize(); }, 60);
+      READY = true;
       requestAnimationFrame(animate);
+      if (PENDING) { update(PENDING); PENDING = null; }   // apply data that arrived during load
     });
     MAP.on("error", (e) => console.error("maplibre error", e && e.error));
-  } else if (MAP && MAP.isStyleLoaded()) {
+  } else if (READY) {
     update(d);
-  } else if (MAP) {
-    MAP.once("idle", () => update(d));
+  } else {
+    PENDING = d;   // arrived before the style finished loading
   }
 }
 
