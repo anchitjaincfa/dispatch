@@ -156,15 +156,6 @@ def reset():
     st.session_state.log = []
 
 
-HERO_PATH = os.path.join(HERE, "hero", "dispatch_drag.html")
-
-
-@st.cache_data
-def hero_html():
-    with open(HERO_PATH) as f:
-        return f.read()
-
-
 # Custom bidirectional component: real Carto basemap + a DRAGGABLE fire marker.
 # On drag-release the marker streams its lng/lat back to Python, which re-solves on
 # the selected real backend and passes the updated routes back to be drawn.
@@ -193,43 +184,28 @@ roadnet = get_roadnet()
 init_state()
 sc = st.session_state.scenario
 
-# ----------------------------- header ---------------------------------------
-hc1, hcv, hc2, hc3 = st.columns([1.9, 1.5, 1.4, 1.0])
+# ----------------------------- header (single real-map view) ----------------
+hc1, hc2, hc3 = st.columns([2.6, 1.4, 1.0])
 with hc1:
     st.markdown('<div class="d-title">▣ DISPATCH</div>', unsafe_allow_html=True)
     st.markdown('<div class="d-sub">WILDFIRE OPS CONSOLE · THE MAP THAT SAVES LIVES</div>',
                 unsafe_allow_html=True)
     _pop = sum(t["population"] for t in sc["towns"])
     _crews = len([s for s in sc["stations"] if s["id"] not in sc.get("dead_crews", [])])
-    _summary = (f'{sc["region"]} · {len(sc["towns"])} towns · {_pop:,} residents · '
+    # D12: short region label so the subtitle never clips
+    _summary = (f'Oakland–Berkeley Hills · {len(sc["towns"])} towns · {_pop:,} residents · '
                 f'{len(sc["shelters"])} shelters · {_crews} crews')
     _cls = "ticker" if not st.session_state.log else "ticker-static"
     st.markdown(f'<div class="{_cls}">{_summary}</div>', unsafe_allow_html=True)
-with hcv:
-    view_mode = st.radio("view", ["🗺 Real solver", "🔥 Live drag"],
-                         horizontal=True, label_visibility="collapsed")
-_drag_view = "Live drag" in view_mode
-backend_label = "classical (OR-Tools)"
-use_claude = False
-if not _drag_view:           # these controls are inert in the mock drag view — hide them
-    with hc2:
-        backend_label = st.selectbox(
-            "Solver backend",
-            ["classical (OR-Tools)", "accelerated (annealer)", "qaoa (Aer qubits)",
-             "xpyq (/decisions)"],
-            index=0, label_visibility="collapsed")
-    with hc3:
-        use_claude = st.toggle("Claude narration",
-                               value=bool(os.environ.get("ANTHROPIC_API_KEY")))
-
-# ----- 2A: Live-drag hero view — true draggable fire (prototype, mock data) ---
-if "Live drag" in view_mode:
-    st.markdown(
-        '<span class="pill">🔥 LIVE DRAG · drag the fire — routes re-solve under your '
-        'finger. Interaction model on mock data; the real four-backend solver runs in '
-        'the 🗺 Real solver view.</span>', unsafe_allow_html=True)
-    components.html(hero_html(), height=760, scrolling=False)
-    st.stop()
+with hc2:
+    backend_label = st.selectbox(
+        "Solver backend",
+        ["classical (OR-Tools)", "accelerated (annealer)", "qaoa (Aer qubits)",
+         "xpyq (/decisions)"],
+        index=0, label_visibility="collapsed")
+with hc3:
+    use_claude = st.toggle("Claude narration",
+                           value=bool(os.environ.get("ANTHROPIC_API_KEY")))
 
 
 # Routing engine: the CAD baseline (closest-unit, capacity-blind) vs DISPATCH global
