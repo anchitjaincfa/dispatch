@@ -1,14 +1,14 @@
 # DISPATCH — pinned at hackathon. Core deps are REQUIRED; optional deps degrade gracefully.
 
 # --- core (required; app runs on these alone) ---
-streamlit>=1.33
-pydeck>=0.9
+streamlit>=1.33      # UI; bundles altair (used for the scaling chart)
 networkx>=3.0
 numpy>=1.24
 pandas>=2.0
 requests>=2.28
-python-dotenv>=1.0
 pytest>=7.0
+# the draggable map vendors MapLibre GL locally (components/dispatch_map/vendor) — no pip dep
+# .env is read by a tiny built-in loader in app.py — no python-dotenv needed
 
 # --- optional (each has a pure-Python fallback; install best-effort) ---
 ortools>=9.8        # classical VRP/assignment; falls back to greedy solver

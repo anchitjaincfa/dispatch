@@ -38,7 +38,6 @@ def _load_dotenv():
 
 _load_dotenv()
 
-import pydeck as pdk
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -138,28 +137,6 @@ def run_scaling():
     vs the accelerated annealer across growing QUBO sizes."""
     from core import bench
     return bench.run()
-
-
-def fire_candidates(scenario, nx=7, ny=5):
-    """A grid of clickable hotspots over the scene's bounding box. Clicking one
-    moves the fire there and re-solves on the SELECTED real backend (pydeck
-    selection returns picked objects, not raw click coords — hence a grid)."""
-    pts = ([t["coord"] for t in scenario["towns"]]
-           + [s["coord"] for s in scenario["shelters"]]
-           + [s["coord"] for s in scenario["stations"]]
-           + [scenario["fire"]["center"]])
-    lngs, lats = [p[0] for p in pts], [p[1] for p in pts]
-    lo_x, hi_x, lo_y, hi_y = min(lngs), max(lngs), min(lats), max(lats)
-    mx = (hi_x - lo_x) * 0.06 or 0.01
-    my = (hi_y - lo_y) * 0.06 or 0.01
-    lo_x, hi_x, lo_y, hi_y = lo_x - mx, hi_x + mx, lo_y - my, hi_y + my
-    out = []
-    for j in range(ny):
-        for i in range(nx):
-            x = lo_x + (hi_x - lo_x) * i / (nx - 1)
-            y = lo_y + (hi_y - lo_y) * j / (ny - 1)
-            out.append({"position": [round(x, 5), round(y, 5)], "name": "⊹ move fire here"})
-    return out
 
 
 roadnet = get_roadnet()
@@ -272,61 +249,6 @@ if line and (not st.session_state.log or st.session_state.log[0]["text"] != line
     log(line)
 st.session_state.prev = res
 st.session_state.event = "tick"
-
-# ----------------------------- map layers -----------------------------------
-fire = sc["fire"]
-endangered_ids = {t["id"] for t in res.extra.get("endangered", [])}
-
-
-def town_color(t):
-    lvl = hazard.threat_level(t, fire)
-    r = int(234*lvl + 234*(1-lvl)); g = int(60*lvl + 179*(1-lvl)); b = int(60*lvl + 8*(1-lvl))
-    return [max(r,200), g, b, 230]
-
-
-layers = [
-    pdk.Layer("ScatterplotLayer",
-              data=[{"position": fire["center"]}],
-              get_position="position", get_radius=fire["radius"]*111000,
-              get_fill_color=[255, 106, 24, 70], get_line_color=[255, 210, 74, 220],
-              line_width_min_pixels=2, stroked=True, pickable=False),
-    pdk.Layer("PathLayer",
-              data=[{"path": p, "name": f"crew {cid} → {res.extra.get('crew_assignment',{}).get(cid,'')}"}
-                    for cid, p in res.crew_routes.items()],
-              get_path="path", get_color=[59, 130, 246], width_min_pixels=4, pickable=True),
-    pdk.Layer("PathLayer",
-              data=[{"path": p, "name": f"evac {tid} → {res.evac_assignment.get(tid)}"}
-                    for tid, p in res.evac_routes.items()],
-              get_path="path", get_color=[245, 159, 11], width_min_pixels=3, pickable=True),
-    pdk.Layer("ScatterplotLayer",
-              data=[{"position": d["coord"], "name": f"defensible (risk {d['risk']})"} for d in sc["defensible"]],
-              get_position="position", get_radius=90, get_fill_color=[255, 122, 92, 180],
-              get_line_color=[255, 122, 92, 255], stroked=True, line_width_min_pixels=1, pickable=True),
-    pdk.Layer("ScatterplotLayer",
-              data=[{"position": s["coord"], "name": s["name"],
-                     "c": [120,120,120,160] if s["id"] in sc.get("dead_crews",[]) else [59,130,246,240]}
-                    for s in sc["stations"]],
-              get_position="position", get_radius=150, get_fill_color="c", pickable=True),
-    pdk.Layer("ScatterplotLayer",
-              data=[{"position": s["coord"], "name": f"{s['name']} (cap {s['capacity']})"} for s in sc["shelters"]],
-              get_position="position", get_radius=190, get_fill_color=[34, 197, 94, 235], pickable=True),
-    pdk.Layer("ScatterplotLayer",
-              data=[{"position": t["coord"], "name": f"{t['name']} (pop {t['population']})", "c": town_color(t)}
-                    for t in sc["towns"]],
-              get_position="position", get_radius=150, get_fill_color="c", pickable=True),
-    # 2B: clickable fire-placement hotspots (subtle); selection re-solves the real backend
-    pdk.Layer("ScatterplotLayer", id="firegrid",
-              data=fire_candidates(sc),
-              get_position="position", get_radius=420,
-              get_fill_color=[255, 210, 74, 35], get_line_color=[255, 210, 74, 110],
-              stroked=True, line_width_min_pixels=1, pickable=True,
-              auto_highlight=True, highlight_color=[255, 106, 24, 170]),
-]
-
-view = pdk.ViewState(longitude=sc["center"][0], latitude=sc["center"][1],
-                     zoom=sc.get("zoom", 12.2), pitch=35)
-deck = pdk.Deck(layers=layers, initial_view_state=view, map_provider="carto",
-                map_style="dark", tooltip={"text": "{name}"})
 
 # ----------------------------- layout ---------------------------------------
 map_col, panel = st.columns([3, 1.15])
