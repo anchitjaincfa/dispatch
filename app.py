@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -100,8 +101,8 @@ def init_state():
 
 
 def log(msg):
-    st.session_state.log.insert(0, msg)
-    st.session_state.log = st.session_state.log[:7]
+    st.session_state.log.insert(0, {"ts": time.strftime("%H:%M:%S"), "text": msg})
+    st.session_state.log = st.session_state.log[:4]
 
 
 def reset():
@@ -174,15 +175,19 @@ with hc1:
 with hcv:
     view_mode = st.radio("view", ["🗺 Real solver", "🔥 Live drag"],
                          horizontal=True, label_visibility="collapsed")
-with hc2:
-    backend_label = st.selectbox(
-        "Solver backend",
-        ["classical (OR-Tools)", "accelerated (annealer)", "qaoa (Aer qubits)",
-         "xpyq (/decisions)"],
-        index=0, label_visibility="collapsed")
-with hc3:
-    use_claude = st.toggle("Claude narration",
-                           value=bool(os.environ.get("ANTHROPIC_API_KEY")))
+_drag_view = "Live drag" in view_mode
+backend_label = "classical (OR-Tools)"
+use_claude = False
+if not _drag_view:           # these controls are inert in the mock drag view — hide them
+    with hc2:
+        backend_label = st.selectbox(
+            "Solver backend",
+            ["classical (OR-Tools)", "accelerated (annealer)", "qaoa (Aer qubits)",
+             "xpyq (/decisions)"],
+            index=0, label_visibility="collapsed")
+    with hc3:
+        use_claude = st.toggle("Claude narration",
+                               value=bool(os.environ.get("ANTHROPIC_API_KEY")))
 
 # ----- 2A: Live-drag hero view — true draggable fire (prototype, mock data) ---
 if "Live drag" in view_mode:
@@ -263,7 +268,7 @@ with st.sidebar:
 res = solver.solve(QUBOProblem(metadata=sc))
 event = st.session_state.event
 line = narrate.narrate(event, st.session_state.prev, res, sc, use_claude=use_claude)
-if line and (not st.session_state.log or st.session_state.log[0] != line):
+if line and (not st.session_state.log or st.session_state.log[0]["text"] != line):
     log(line)
 st.session_state.prev = res
 st.session_state.event = "tick"
@@ -366,7 +371,10 @@ with panel:
     if not st.session_state.log:
         st.markdown('<div class="narr">Awaiting first action. Use the controls to move the fire.</div>', unsafe_allow_html=True)
     for ln in st.session_state.log:
-        st.markdown(f'<div class="narr">{ln}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="narr"><span style="color:#5e7a70;font-size:0.66rem;'
+            f'letter-spacing:0.5px">{ln["ts"]} · DISPATCH</span><br>{ln["text"]}</div>',
+            unsafe_allow_html=True)
 
     st.markdown("##### Evacuation plan "
                 f'<span style="color:#4ade80">{"FEASIBLE" if res.feasible else ""}</span>'
@@ -375,10 +383,19 @@ with panel:
     name_t = {t["id"]: t["name"] for t in sc["towns"]}
     name_s = {s["id"]: s["name"] for s in sc["shelters"]}
     comp = set(res.extra.get("compromised_evacs", []))
+    e_loads, e_caps = res.extra.get("shelter_load", {}), res.extra.get("shelter_cap", {})
+    over_sh = {sid for sid in e_caps if e_loads.get(sid, 0) > e_caps[sid]}
+    _b = "border-radius:5px;padding:1px 6px;font-size:0.6rem;font-weight:700"
+    routed = f'<span style="background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.35);{_b}">ROUTED</span>'
+    overcap = f'<span style="background:rgba(255,122,92,.15);color:#ff7a5c;border:1px solid rgba(255,122,92,.45);{_b}">OVER CAP</span>'
     for tid, sid in res.evac_assignment.items():
         cls = "evac-bad" if tid in comp else "evac-ok"
         flag = " ⚠ fire-adjacent" if tid in comp else ""
-        st.markdown(f'<span class="{cls}">{name_t[tid]} → {name_s[sid]}{flag}</span>', unsafe_allow_html=True)
+        badge = overcap if sid in over_sh else routed
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'margin-bottom:3px"><span class="{cls}">{name_t[tid]} → {name_s[sid]}{flag}'
+            f'</span>{badge}</div>', unsafe_allow_html=True)
 
     st.markdown("##### Shelter capacity")
     loads = res.extra.get("shelter_load", {}); caps = res.extra.get("shelter_cap", {})
