@@ -369,9 +369,12 @@ with map_col:
                 reset(); st.rerun()
         elif fire_pos.get("lng") is not None:
             pos = [fire_pos["lng"], fire_pos["lat"]]
-            cur = sc["fire"]["center"]
-            if abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6:
+            rad = float(fire_pos.get("radius", sc["fire"]["radius"]))
+            cur, cur_r = sc["fire"]["center"], sc["fire"]["radius"]
+            if (abs(pos[0] - cur[0]) > 1e-6 or abs(pos[1] - cur[1]) > 1e-6
+                    or abs(rad - cur_r) > 1e-6):
                 sc["fire"]["center"] = pos
+                sc["fire"]["radius"] = max(0.004, min(0.035, rad))
                 st.session_state.event = "advance_fire"
                 st.rerun()
     st.markdown(

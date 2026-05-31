@@ -8,22 +8,30 @@
   html, body { margin:0; padding:0; background:#0a0f0d; font-family: ui-monospace, monospace; }
   #map { width:100%; height:560px; }
   .maplibregl-canvas { cursor: default; }
+  /* fiery core grab handle (move) */
   .fire-handle {
-    width:26px; height:26px; border-radius:50%;
-    background: radial-gradient(circle at 35% 30%, #fff1c0, #ff6a18 55%, #b53d08);
-    box-shadow: 0 0 22px 8px rgba(255,106,24,.55), inset 0 0 6px rgba(255,210,74,.7);
-    cursor: grab; border:2px solid #ffd24a;
+    width:30px; height:30px; border-radius:50%;
+    background: radial-gradient(circle at 38% 32%, #fff6d8, #ffd24a 32%, #ff6a18 62%, #b3260a 100%);
+    box-shadow: 0 0 26px 10px rgba(255,106,24,.6), inset 0 0 8px rgba(255,246,216,.8);
+    cursor: grab; animation: flicker 1.4s ease-in-out infinite;
   }
   .fire-handle:active { cursor: grabbing; }
+  @keyframes flicker {
+    0%,100% { box-shadow: 0 0 24px 8px rgba(255,106,24,.55), inset 0 0 8px rgba(255,246,216,.8); }
+    50%     { box-shadow: 0 0 34px 13px rgba(255,140,40,.7), inset 0 0 10px rgba(255,246,216,.95); }
+  }
+  /* edge resize handle */
+  .resize-handle {
+    width:14px; height:14px; border-radius:50%;
+    background:#fff1c0; border:2px solid #ff6a18; box-shadow:0 0 8px rgba(255,106,24,.7);
+    cursor: nwse-resize;
+  }
   .hint {
     position:absolute; left:12px; bottom:12px; z-index:5;
     background:rgba(12,19,16,.82); border:1px solid #1d2f28; border-radius:8px;
     padding:7px 11px; color:#ffb86b; font-size:11px; backdrop-filter:blur(3px);
     pointer-events:none;
   }
-  .lbl { color:#cfe3da; font-size:10px; text-shadow:0 0 3px #000; pointer-events:none;
-         transform:translate(10px,-6px); white-space:nowrap; }
-  /* P3.1: faint scanlines + edge vignette for the "ops console" feel */
   .scanlines { position:absolute; inset:0; z-index:3; pointer-events:none;
     background: repeating-linear-gradient(0deg, transparent 0 2px,
       rgba(120,255,200,0.045) 2px 3px, transparent 3px 4px); }
@@ -35,7 +43,7 @@
 <div id="map"></div>
 <div class="vignette"></div>
 <div class="scanlines"></div>
-<div class="hint">🖱 drag the fire — routes re-solve on release · ◀▲▶▼ move · A advance · R reset</div>
+<div class="hint">🖱 drag the fire to move · drag the edge dot or scroll to resize · routes re-solve on release · ◀▲▶▼/A/R keys</div>
 <script>
 // ---- Streamlit component handshake (bare static component, no build step) ----
 function send(type, data) {
@@ -45,24 +53,29 @@ function setValue(v) { send("streamlit:setComponentValue", { value: v, dataType:
 function ready() { send("streamlit:componentReady", { apiVersion: 1 }); }
 function frameHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
 
-let MAP = null, FIRE = null, INIT = false, NONCE = 0, LAST_D = null;
-// no-labels dark basemap so the FIRE and routes are the brightest things on screen (P1)
+let MAP = null, MOVE = null, RESIZE = null, INIT = false, NONCE = 0, LAST_D = null;
+let FIRE = [0, 0], RADIUS = 0.01;     // source of truth during interaction (degrees)
+let interacting = false, pulseT = 0;
+const RMIN = 0.004, RMAX = 0.035;
 const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
 
+function latScale(lat) { return Math.cos(lat * Math.PI / 180) || 1; }
+function angDist(a, b) {
+  const s = latScale(b[1]); return Math.hypot((a[0] - b[0]) * s, a[1] - b[1]);
+}
+function edgePoint() { return [FIRE[0] + RADIUS / latScale(FIRE[1]), FIRE[1]]; }
+
 function circlePolygon(center, radiusDeg, n) {
-  const coords = [];
-  const latScale = Math.cos(center[1] * Math.PI / 180) || 1;
+  const coords = [], s = latScale(center[1]);
   for (let i = 0; i <= n; i++) {
     const a = (i / n) * 2 * Math.PI;
-    coords.push([center[0] + (radiusDeg / latScale) * Math.cos(a),
-                 center[1] + radiusDeg * Math.sin(a)]);
+    coords.push([center[0] + (radiusDeg / s) * Math.cos(a), center[1] + radiusDeg * Math.sin(a)]);
   }
   return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] } };
 }
 function fc(features) { return { type: "FeatureCollection", features: features }; }
 function ptFeatures(items, getC, props) {
-  return items.map(it => ({ type: "Feature",
-    properties: props ? props(it) : {},
+  return items.map(it => ({ type: "Feature", properties: props ? props(it) : {},
     geometry: { type: "Point", coordinates: getC(it) } }));
 }
 function lineFeatures(routes) {
@@ -70,23 +83,60 @@ function lineFeatures(routes) {
     geometry: { type: "LineString", coordinates: routes[k] } }))
     .filter(f => f.geometry.coordinates && f.geometry.coordinates.length >= 2);
 }
-
 function setData(id, geojson) { const s = MAP.getSource(id); if (s) s.setData(geojson); }
 
-function buildLayers(d) {
-  // sources
-  MAP.addSource("fire-area", { type: "geojson", data: circlePolygon(d.fire.center, d.fire.radius, 48) });
-  MAP.addSource("crew", { type: "geojson", data: fc(lineFeatures(d.crew_routes)) });
-  MAP.addSource("evac", { type: "geojson", data: fc(lineFeatures(d.evac_routes)) });
-  MAP.addSource("shelters", { type: "geojson", data: fc(ptFeatures(d.shelters, s => s.coord, s => ({ name: s.name }))) });
-  MAP.addSource("stations", { type: "geojson", data: fc(ptFeatures(d.stations, s => s.coord, s => ({ dead: (d.dead_crews || []).includes(s.id) ? 1 : 0 }))) });
-  MAP.addSource("defensible", { type: "geojson", data: fc(ptFeatures(d.defensible, p => p.coord)) });
-  MAP.addSource("towns", { type: "geojson", data: fc(ptFeatures(d.towns, t => t.coord, t => ({ name: t.name, threat: (d.endangered || []).includes(t.id) ? 1 : 0 }))) });
+// ---- embers (cosmetic) ----
+let EMBERS = [];
+function seedEmbers() {
+  EMBERS = Array.from({ length: 16 }, (_, i) => ({
+    ang: (i / 16) * 2 * Math.PI, dist: Math.random(), life: Math.random(),
+    speed: 0.6 + Math.random() * 0.7,
+  }));
+}
+function emberFC() {
+  const s = latScale(FIRE[1]);
+  return fc(EMBERS.map(e => {
+    const r = RADIUS * (0.4 + e.dist * 1.4);
+    return { type: "Feature", properties: { o: Math.max(0, e.life) * 0.8 },
+      geometry: { type: "Point", coordinates: [
+        FIRE[0] + (r / s) * Math.cos(e.ang), FIRE[1] + r * Math.sin(e.ang) + RADIUS * e.dist * 0.5] } };
+  }));
+}
 
-  MAP.addLayer({ id: "fire-area", type: "fill", source: "fire-area",
-    paint: { "fill-color": "#ff6a18", "fill-opacity": 0.16 } });
-  MAP.addLayer({ id: "fire-ring", type: "line", source: "fire-area",
-    paint: { "line-color": "#ffd24a", "line-width": 1.5, "line-opacity": 0.7 } });
+// ---- fire bloom (3 stacked circles) + pulse ----
+function drawFire() {
+  const pulse = 1 + 0.08 * Math.sin(pulseT);
+  setData("fire-halo", circlePolygon(FIRE, RADIUS * 2.6 * pulse, 44));
+  setData("fire-mid", circlePolygon(FIRE, RADIUS * 1.4 * pulse, 44));
+  setData("fire-core", circlePolygon(FIRE, RADIUS * 0.5 * pulse, 36));
+  setData("fire-ring", circlePolygon(FIRE, RADIUS * 1.4 * pulse, 44));
+  setData("embers", emberFC());
+  if (MOVE && !MOVE._dragging) MOVE.setLngLat(FIRE);
+  if (RESIZE && !RESIZE._dragging) RESIZE.setLngLat(edgePoint());
+}
+
+function animate() {
+  pulseT += 0.07;
+  for (const e of EMBERS) {
+    e.dist += 0.012 * e.speed; e.life -= 0.013;
+    if (e.life <= 0 || e.dist > 1) { e.dist = 0; e.life = 1; e.ang = Math.random() * 2 * Math.PI; }
+  }
+  if (MAP && MAP.getSource("fire-core")) drawFire();
+  requestAnimationFrame(animate);
+}
+
+function buildLayers(d) {
+  const empty = fc([]);
+  for (const id of ["fire-halo", "fire-mid", "fire-core", "fire-ring", "embers",
+                    "crew", "evac", "shelters", "stations", "defensible", "towns"]) {
+    MAP.addSource(id, { type: "geojson", data: empty });
+  }
+  // bloom (bottom -> up): halo, mid
+  MAP.addLayer({ id: "fire-halo", type: "fill", source: "fire-halo",
+    paint: { "fill-color": "#b3260a", "fill-opacity": 0.24 } });
+  MAP.addLayer({ id: "fire-mid", type: "fill", source: "fire-mid",
+    paint: { "fill-color": "#ff6a18", "fill-opacity": 0.42 } });
+  // routes + entities over the outer bloom
   MAP.addLayer({ id: "crew", type: "line", source: "crew",
     paint: { "line-color": "#3b82f6", "line-width": 3.5, "line-opacity": 0.95,
              "line-opacity-transition": { duration: 320 } } });
@@ -103,36 +153,44 @@ function buildLayers(d) {
   MAP.addLayer({ id: "towns", type: "circle", source: "towns",
     paint: { "circle-radius": 6, "circle-stroke-width": 1.5, "circle-stroke-color": "#0a0f0d",
              "circle-color": ["case", ["==", ["get", "threat"], 1], "#ff5b2e", "#eab308"] } });
+  // bright core + ring + embers on top
+  MAP.addLayer({ id: "fire-core", type: "fill", source: "fire-core",
+    paint: { "fill-color": "#fff6d8", "fill-opacity": 0.85 } });
+  MAP.addLayer({ id: "fire-ring", type: "line", source: "fire-ring",
+    paint: { "line-color": "#ffd24a", "line-width": 1.4, "line-opacity": 0.6 } });
+  MAP.addLayer({ id: "embers", type: "circle", source: "embers",
+    paint: { "circle-radius": 2.2, "circle-color": "#ffd24a", "circle-opacity": ["get", "o"] } });
+  // initial entity data
+  pushEntities(d);
 }
 
-function healIn(layer, target) {
-  // fade the route layer out then back in, so a re-solve reads as the map "healing"
-  if (!MAP.getLayer(layer)) return;
-  MAP.setPaintProperty(layer, "line-opacity", 0);
-  requestAnimationFrame(() => requestAnimationFrame(() =>
-    MAP.setPaintProperty(layer, "line-opacity", target)));
-}
-
-function update(d) {
-  setData("fire-area", circlePolygon(d.fire.center, d.fire.radius, 48));
+function pushEntities(d) {
   setData("crew", fc(lineFeatures(d.crew_routes)));
   setData("evac", fc(lineFeatures(d.evac_routes)));
   setData("shelters", fc(ptFeatures(d.shelters, s => s.coord, s => ({ name: s.name }))));
   setData("stations", fc(ptFeatures(d.stations, s => s.coord, s => ({ dead: (d.dead_crews || []).includes(s.id) ? 1 : 0 }))));
   setData("defensible", fc(ptFeatures(d.defensible, p => p.coord)));
   setData("towns", fc(ptFeatures(d.towns, t => t.coord, t => ({ name: t.name, threat: (d.endangered || []).includes(t.id) ? 1 : 0 }))));
+}
+
+function healIn(layer, target) {
+  if (!MAP.getLayer(layer)) return;
+  MAP.setPaintProperty(layer, "line-opacity", 0);
+  requestAnimationFrame(() => requestAnimationFrame(() => MAP.setPaintProperty(layer, "line-opacity", target)));
+}
+
+function update(d) {
+  pushEntities(d);
   healIn("crew", 0.95);
   healIn("evac", 0.95);
-  // move the fire handle to match server state (unless user is mid-drag)
-  if (FIRE && !FIRE._dragging) {
-    FIRE.setLngLat(d.fire.center);
-    // P3.3: gently keep the fire in view — only pan if it has left the viewport
-    try {
-      if (!MAP.getBounds().contains(d.fire.center))
-        MAP.easeTo({ center: d.fire.center, duration: 700 });
-    } catch (e) {}
+  if (!interacting) {
+    FIRE = d.fire.center.slice(); RADIUS = d.fire.radius;
+    drawFire();
+    try { if (!MAP.getBounds().contains(FIRE)) MAP.easeTo({ center: FIRE, duration: 700 }); } catch (e) {}
   }
 }
+
+function postFire() { setValue({ lng: FIRE[0], lat: FIRE[1], radius: RADIUS, nonce: ++NONCE }); }
 
 function onRender(args) {
   const d = (args && args.data) || null;
@@ -140,37 +198,50 @@ function onRender(args) {
   LAST_D = d;
   if (!INIT) {
     INIT = true;
-    MAP = new maplibregl.Map({
-      container: "map", style: STYLE,
-      center: d.center, zoom: d.zoom || 12.2, attributionControl: false,
-    });
+    FIRE = d.fire.center.slice(); RADIUS = d.fire.radius;
+    MAP = new maplibregl.Map({ container: "map", style: STYLE,
+      center: d.center, zoom: d.zoom || 12.2, attributionControl: false });
     MAP.on("load", () => {
-      // P1: dim basemap road lines so our crew/evac routes are the brightest lines
-      for (const ly of MAP.getStyle().layers) {
-        if (ly.type === "line") {
-          try { MAP.setPaintProperty(ly.id, "line-opacity", 0.28); } catch (e) {}
-        }
-      }
+      for (const ly of MAP.getStyle().layers)
+        if (ly.type === "line") { try { MAP.setPaintProperty(ly.id, "line-opacity", 0.28); } catch (e) {} }
       buildLayers(d);
-      // draggable fire handle
-      const el = document.createElement("div"); el.className = "fire-handle";
-      FIRE = new maplibregl.Marker({ element: el, draggable: true })
-        .setLngLat(d.fire.center).addTo(MAP);
-      FIRE._dragging = false;
-      FIRE.on("dragstart", () => { FIRE._dragging = true; });
-      FIRE.on("drag", () => {
-        const ll = FIRE.getLngLat();
-        setData("fire-area", circlePolygon([ll.lng, ll.lat], d.fire.radius, 48));
+      seedEmbers();
+
+      // move handle (the fiery core)
+      const me = document.createElement("div"); me.className = "fire-handle";
+      MOVE = new maplibregl.Marker({ element: me, draggable: true }).setLngLat(FIRE).addTo(MAP);
+      MOVE._dragging = false;
+      MOVE.on("dragstart", () => { MOVE._dragging = true; interacting = true; });
+      MOVE.on("drag", () => { const ll = MOVE.getLngLat(); FIRE = [ll.lng, ll.lat]; });
+      MOVE.on("dragend", () => { MOVE._dragging = false; interacting = false; postFire(); });
+
+      // resize handle (edge dot)
+      const re = document.createElement("div"); re.className = "resize-handle";
+      RESIZE = new maplibregl.Marker({ element: re, draggable: true }).setLngLat(edgePoint()).addTo(MAP);
+      RESIZE._dragging = false;
+      RESIZE.on("dragstart", () => { RESIZE._dragging = true; interacting = true; });
+      RESIZE.on("drag", () => {
+        const ll = RESIZE.getLngLat();
+        RADIUS = Math.max(RMIN, Math.min(RMAX, angDist([ll.lng, ll.lat], FIRE)));
       });
-      FIRE.on("dragend", () => {
-        FIRE._dragging = false;
-        const ll = FIRE.getLngLat();
-        setValue({ lng: ll.lng, lat: ll.lat, nonce: ++NONCE });
+      RESIZE.on("dragend", () => { RESIZE._dragging = false; interacting = false; RESIZE.setLngLat(edgePoint()); postFire(); });
+
+      // scroll-wheel resize when hovering the fire
+      let wheelTimer = null;
+      MAP.on("wheel", (e) => {
+        const c = MAP.unproject(e.point);
+        if (angDist([c.lng, c.lat], FIRE) > RADIUS * 2.6) return;   // not over the fire -> normal zoom
+        e.preventDefault();
+        RADIUS = Math.max(RMIN, Math.min(RMAX, RADIUS * (e.originalEvent.deltaY < 0 ? 1.08 : 0.92)));
+        if (wheelTimer) clearTimeout(wheelTimer);
+        wheelTimer = setTimeout(postFire, 250);
       });
+
       frameHeight(566);
       setTimeout(() => { if (MAP) MAP.resize(); }, 60);
+      requestAnimationFrame(animate);
     });
-    MAP.on("error", (e) => { console.error("maplibre error", e && e.error); });
+    MAP.on("error", (e) => console.error("maplibre error", e && e.error));
   } else if (MAP && MAP.isStyleLoaded()) {
     update(d);
   } else if (MAP) {
@@ -182,15 +253,12 @@ window.addEventListener("message", (e) => {
   if (e.data && e.data.type === "streamlit:render") onRender(e.data.args);
 });
 
-// P3.4: keyboard control (the map must have focus — click it first).
-// arrows move the fire · A advances toward the towns · R resets the scenario.
+// keyboard: arrows move · A advances toward towns · R resets (map must have focus)
 document.addEventListener("keydown", (ev) => {
-  if (!FIRE || !LAST_D) return;
+  if (!MAP || !LAST_D) return;
   const k = ev.key.toLowerCase();
   if (k === "r") { ev.preventDefault(); setValue({ action: "reset", nonce: ++NONCE }); return; }
-  const ll = FIRE.getLngLat();
-  let lng = ll.lng, lat = ll.lat, moved = false;
-  const step = 0.003;
+  let lng = FIRE[0], lat = FIRE[1], moved = false; const step = 0.003;
   if (ev.key === "ArrowLeft") { lng -= step; moved = true; }
   else if (ev.key === "ArrowRight") { lng += step; moved = true; }
   else if (ev.key === "ArrowUp") { lat += step; moved = true; }
@@ -203,12 +271,7 @@ document.addEventListener("keydown", (ev) => {
       lng += (cx - lng) * 0.3; lat += (cy - lat) * 0.3; moved = true;
     }
   }
-  if (moved) {
-    ev.preventDefault();
-    FIRE.setLngLat([lng, lat]);
-    setData("fire-area", circlePolygon([lng, lat], LAST_D.fire.radius, 48));
-    setValue({ lng: lng, lat: lat, nonce: ++NONCE });
-  }
+  if (moved) { ev.preventDefault(); FIRE = [lng, lat]; drawFire(); postFire(); }
 });
 ready();
 frameHeight(566);
