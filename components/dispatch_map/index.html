@@ -38,7 +38,8 @@ function ready() { send("streamlit:componentReady", { apiVersion: 1 }); }
 function frameHeight(h) { send("streamlit:setFrameHeight", { height: h }); }
 
 let MAP = null, FIRE = null, INIT = false, NONCE = 0;
-const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+// no-labels dark basemap so the FIRE and routes are the brightest things on screen (P1)
+const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json";
 
 function circlePolygon(center, radiusDeg, n) {
   const coords = [];
@@ -116,6 +117,12 @@ function onRender(args) {
       center: d.center, zoom: d.zoom || 12.2, attributionControl: false,
     });
     MAP.on("load", () => {
+      // P1: dim basemap road lines so our crew/evac routes are the brightest lines
+      for (const ly of MAP.getStyle().layers) {
+        if (ly.type === "line") {
+          try { MAP.setPaintProperty(ly.id, "line-opacity", 0.28); } catch (e) {}
+        }
+      }
       buildLayers(d);
       // draggable fire handle
       const el = document.createElement("div"); el.className = "fire-handle";

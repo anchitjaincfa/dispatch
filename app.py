@@ -53,22 +53,37 @@ st.set_page_config(page_title="DISPATCH", layout="wide", page_icon="🔥",
 # ----------------------------- design tokens --------------------------------
 st.markdown("""
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
   /* P0: kill Streamlit chrome (toolbar, hamburger, Deploy, footer) */
   #MainMenu, header[data-testid="stHeader"], footer,
   [data-testid="stToolbar"], [data-testid="stDecoration"] {visibility:hidden; height:0;}
   .stApp {background: #0a0f0d;}
+  html, body, [class*="css"], .stMarkdown, .stApp {
+        font-family: 'Space Grotesk', system-ui, sans-serif;}
   .block-container {padding-top: 1rem; padding-bottom: 0; max-width: 100%;}
+  /* P1: section headers — small, UPPERCASE, letter-spaced, muted */
+  .block-container h5, .block-container h6,
+  section[data-testid="stSidebar"] h3 {
+        font-size: 0.74rem !important; font-weight: 600 !important;
+        text-transform: uppercase; letter-spacing: 0.15em; color: #5e7a70 !important;}
   .d-title {font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 1.9rem;
             font-weight: 800; color: #ff6a18; letter-spacing: 1px; margin: 0;}
   .d-sub {color: #5e7a70; margin-top: -4px; font-size: 0.8rem; letter-spacing: 0.5px;}
   .pill {display:inline-block; background:#0f1714; border:1px solid #1d2f28;
-         border-radius: 20px; padding: 4px 12px; font-family: ui-monospace, monospace;
+         border-radius: 20px; padding: 4px 12px; font-family: 'Space Mono', ui-monospace, monospace;
          font-size: 0.74rem; color:#cfe3da;}
   .dot {height:8px; width:8px; background:#4ade80; border-radius:50%; display:inline-block;
-        margin-right:6px; box-shadow:0 0 6px #4ade80;}
-  .narr {background:#0f1714; color:#cfe3da; border-left:3px solid #ff6a18;
-         padding:8px 12px; border-radius:8px; font-family: ui-monospace, monospace;
-         font-size:0.8rem; margin-bottom:5px;}
+        margin-right:6px; box-shadow:0 0 6px #4ade80; animation: pulse 1.8s ease-in-out infinite;}
+  @keyframes pulse {0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,.55);}
+                    50%{box-shadow:0 0 0 6px rgba(74,222,128,0);}}
+  @keyframes fadein {from{opacity:0; transform:translateY(-5px);} to{opacity:1; transform:none;}}
+  /* P1: dispatcher log */
+  .logwrap {max-height: 188px; overflow-y: auto; padding-right: 2px;}
+  .narr {background:#120d09; color:#bcd3c9; border-left:3px solid #ff6a18;
+         padding:8px 10px; border-radius:0 6px 6px 0; font-family:'Space Mono', monospace;
+         font-size:0.81rem; margin-bottom:8px;}
+  .narr:first-child {animation: fadein .35s ease-out;}
+  .narr .ts {color:#7a9488; font-size:0.69rem; letter-spacing:0.5px;}
   .metric {background:#0f1714; border:1px solid #1d2f28; border-radius:10px;
            padding:14px 12px; text-align:center;}
   .metric .mv {font-size:28px; font-weight:700; line-height:1;
@@ -78,6 +93,21 @@ st.markdown("""
   .evac-ok {color:#cfe3da;} .evac-bad {color:#ff7a5c; font-weight:700;}
   .capbar {height:7px; background:#15241d; border-radius:4px; overflow:hidden; margin-top:3px;}
   .capfill {height:7px; border-radius:4px;}
+  /* P1: legend strip */
+  .legend {display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center;
+           background:#0c1310; border:1px solid #1d2f28; border-radius:8px;
+           padding:7px 12px; font-family:'Space Mono', monospace; font-size:0.7rem;
+           color:#9fb8ae; margin-top:6px;}
+  .legend i {display:inline-block; vertical-align:middle; margin-right:5px;}
+  .sw {width:11px; height:11px; border-radius:50%;}
+  .swl {width:16px; height:0; border-top:3px solid;}
+  /* P1: consistent sidebar buttons */
+  section[data-testid="stSidebar"] .stButton > button {
+        height: 40px; background: transparent; border: 1px solid #1d2f28;
+        border-radius: 8px; color: #cfe3da; font-family: 'Space Mono', monospace;
+        font-size: 0.8rem; transition: all .13s;}
+  section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #13201b; border-color: #2c4a40; color: #fff;}
   h1,h2,h3,h4 {color:#cfe3da;}
   section[data-testid="stSidebar"] {background:#0c1310;}
 </style>
@@ -291,8 +321,16 @@ with map_col:
             sc["fire"]["center"] = pos
             st.session_state.event = "advance_fire"
             st.rerun()
-    st.caption("🖱 drag the fire — re-solves on the selected backend · 🔵 crew routes · "
-               "🟠 evac routes · 🟢 shelters · 🔵 stations · 🟡 towns (red = threatened) · ◇ defensible")
+    st.markdown(
+        '<div class="legend">'
+        '<span><i class="sw" style="background:#ff6a18"></i>fire</span>'
+        '<span><i class="swl" style="border-color:#3b82f6"></i>crew route</span>'
+        '<span><i class="swl" style="border-top-style:dashed;border-color:#f59e0b"></i>evac route</span>'
+        '<span><i class="sw" style="background:#eab308"></i>town</span>'
+        '<span><i class="sw" style="background:#22c55e"></i>shelter</span>'
+        '<span><i class="sw" style="background:#3b82f6"></i>station</span>'
+        '<span style="color:#5e7a70">🖱 drag the fire to re-solve</span>'
+        '</div>', unsafe_allow_html=True)
 
 with panel:
     end = res.extra.get("endangered", [])           # SAME geometric threat the narrator uses
@@ -306,12 +344,13 @@ with panel:
 
     st.markdown("##### Dispatcher")
     if not st.session_state.log:
-        st.markdown('<div class="narr">Awaiting first action. Use the controls to move the fire.</div>', unsafe_allow_html=True)
-    for ln in st.session_state.log:
-        st.markdown(
-            f'<div class="narr"><span style="color:#5e7a70;font-size:0.66rem;'
-            f'letter-spacing:0.5px">{ln["ts"]} · DISPATCH</span><br>{ln["text"]}</div>',
-            unsafe_allow_html=True)
+        log_html = ('<div class="narr">Awaiting first action. Drag the fire or use '
+                    'the controls.</div>')
+    else:
+        log_html = "".join(
+            f'<div class="narr"><span class="ts">{ln["ts"]} · DISPATCH</span><br>'
+            f'{ln["text"]}</div>' for ln in st.session_state.log)
+    st.markdown(f'<div class="logwrap">{log_html}</div>', unsafe_allow_html=True)
 
     st.markdown("##### Evacuation plan "
                 f'<span style="color:#4ade80">{"FEASIBLE" if res.feasible else ""}</span>'
