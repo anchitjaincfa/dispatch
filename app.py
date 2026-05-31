@@ -131,6 +131,14 @@ def dispatch_map(data, key=None):
     return _dispatch_map_component(data=data, key=key, default=None)
 
 
+@st.cache_data(show_spinner="Sweeping instance sizes…")
+def run_scaling():
+    """The honest scaling artifact (cached; ~5s once). Exact enumeration vs CP-SAT
+    vs the accelerated annealer across growing QUBO sizes."""
+    from core import bench
+    return bench.run()
+
+
 def fire_candidates(scenario, nx=7, ny=5):
     """A grid of clickable hotspots over the scene's bounding box. Clicking one
     moves the fire there and re-solves on the SELECTED real backend (pydeck
@@ -391,3 +399,40 @@ with panel:
         st.caption("Quantum/accelerated backends solve the SAME town→shelter QUBO as "
                    "OR-Tools. This proves the mapping and that re-solve speed is the "
                    "binding constraint — not a production quantum speed advantage at this scale.")
+
+# ----------------------------- scaling artifact -----------------------------
+with st.expander("📈 Scaling — why latency is the product (honest benchmark)"):
+    st.caption("Sweeps the town→shelter QUBO from small to large. Exact enumeration "
+               "blows up (the core is genuinely NP-hard); CP-SAT stays fast at demo "
+               "scale; the accelerated annealer stays flat AND hits the optimum "
+               "(gap 0). That's why accelerated hardware belongs UPSTREAM of the "
+               "~140 ms live loop — never on it.")
+    if st.button("Run scaling benchmark", help="~5s, cached after the first run"):
+        st.session_state.bench = run_scaling()
+    rows = st.session_state.get("bench")
+    if rows:
+        import altair as alt
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        long = df.melt(id_vars=["vars"], value_vars=["brute_ms", "cpsat_ms", "anneal_ms"],
+                       var_name="method", value_name="ms").dropna()
+        label = {"brute_ms": "exact enumeration", "cpsat_ms": "OR-Tools CP-SAT",
+                 "anneal_ms": "accelerated annealer"}
+        long["method"] = long["method"].map(label)
+        chart = (alt.Chart(long).mark_line(point=True).encode(
+                    x=alt.X("vars:Q", title="QUBO variables (T × S)"),
+                    y=alt.Y("ms:Q", title="solve time (ms, log)",
+                            scale=alt.Scale(type="log")),
+                    color=alt.Color("method:N", title="",
+                                    scale=alt.Scale(
+                                        domain=["exact enumeration", "OR-Tools CP-SAT",
+                                                "accelerated annealer"],
+                                        range=["#ff7a5c", "#3b82f6", "#22c55e"])))
+                 .properties(height=300))
+        st.altair_chart(chart, use_container_width=True)
+        st.dataframe(df[["vars", "T", "S", "brute_ms", "cpsat_ms", "anneal_ms",
+                         "anneal_gap"]], hide_index=True, use_container_width=True)
+        st.caption("`anneal_gap` is 0.0 wherever brute force is still tractable — the "
+                   "heuristic core stays exact as it scales.")
+    else:
+        st.caption("Click **Run scaling benchmark** to generate the chart.")
