@@ -83,6 +83,31 @@ def feasible(prob: AssignmentProblem, choice) -> bool:
     return all(load[prob.shelter_ids[j]] <= prob.cap[j] for j in range(prob.S))
 
 
+def greedy_assign(prob: AssignmentProblem):
+    """CAD 'closest-available-unit' baseline: each town -> its nearest shelter,
+    IGNORING global capacity. This is what live dispatch does today — and it lets
+    popular shelters overflow, which is exactly the trade-off the global optimizer
+    fixes. Returns a categorical choice (shelter index per town)."""
+    return [int(np.argmin(prob.cost[i])) for i in range(prob.T)]
+
+
+def plan_metrics(prob: AssignmentProblem, choice) -> dict:
+    """Compare-the-two metrics: total response time (person-minutes of travel),
+    % population sheltered (within capacity), and capacity violations."""
+    response_sec = sum(prob.cost[i][choice[i]] for i in range(prob.T))
+    load = [0.0] * prob.S
+    for i in range(prob.T):
+        load[choice[i]] += prob.pop[i]
+    over_people = sum(max(0.0, load[j] - prob.cap[j]) for j in range(prob.S))
+    total_pop = sum(prob.pop) or 1
+    return {
+        "response_min": round(response_sec / 60.0, 1),
+        "sheltered_pct": round(100.0 * (total_pop - over_people) / total_pop, 1),
+        "over_people": int(round(over_people)),
+        "violations": sum(1 for j in range(prob.S) if load[j] > prob.cap[j]),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # solvers over the same energy landscape
 # --------------------------------------------------------------------------- #
